@@ -25,7 +25,10 @@ export class RealApiClient implements ApiClient {
     if (init?.body && !(init.body instanceof FormData)) headers["Content-Type"] = "application/json"
 
     const token = useAuthStore.getState().token
-    if (token) headers["Authorization"] = `Bearer ${token}`
+    // The CryoSync session token must NOT use the Authorization header: the
+    // Databricks Apps proxy consumes that header for platform auth and rejects
+    // unknown bearer tokens with a 401 before the request reaches the app.
+    if (token) headers["X-CryoSync-Token"] = token
 
     let res: Response
     try {

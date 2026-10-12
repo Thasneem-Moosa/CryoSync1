@@ -78,12 +78,21 @@ def _is_public(path: str) -> bool:
 
 
 async def _current_user(request: Request) -> Optional[dict]:
-    """Resolve the signed-in user from Authorization header or ?token= param."""
-    authz = request.headers.get("authorization", "")
-    token = ""
-    if authz.lower().startswith("bearer "):
-        token = authz[7:].strip()
-    else:
+    """Resolve the signed-in user from the session token.
+
+    The CryoSync session token travels in the ``X-CryoSync-Token`` header.
+    Behind the Databricks Apps proxy the ``Authorization`` header is reserved
+    for the platform's own auth: a non-Databricks bearer token there makes the
+    proxy answer 401 before the request ever reaches the app. The Authorization
+    header (and ``?token=``) are still accepted as fallbacks so the app keeps
+    working when run locally without the proxy.
+    """
+    token = (request.headers.get("x-cryosync-token") or "").strip()
+    if not token:
+        authz = request.headers.get("authorization", "")
+        if authz.lower().startswith("bearer "):
+            token = authz[7:].strip()
+    if not token:
         token = (request.query_params.get("token") or "").strip()
     if not token:
         return None
