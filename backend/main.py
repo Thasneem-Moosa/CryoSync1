@@ -11,7 +11,7 @@ from typing import Optional
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Header, HTTPException, Query, UploadFile, File, Request
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -2063,25 +2063,36 @@ async def delete_genie_conversation(conv_id: str, user_id: str = "") -> bool:
         )
         return result != "DELETE 0"
 
-async def _genie_user(authorization: str):
-    """Resolve the signed-in user from an Authorization header, or None."""
-    if not authorization:
-        return None
-    token = authorization.removeprefix("Bearer ").strip()
+async def _genie_user(request: Request):
+    """Resolve the signed-in user for the Genie routes.
+
+    The auth middleware already authenticated the request and stored the user
+    on ``request.state.user``. Fall back to the ``X-CryoSync-Token`` /
+    ``Authorization`` header only when the route is reached without the
+    middleware (e.g. direct unit tests).
+    """
+    user = getattr(request.state, "user", None)
+    if user:
+        return user
+    token = (request.headers.get("x-cryosync-token") or "").strip()
+    if not token:
+        authz = request.headers.get("authorization", "")
+        if authz.lower().startswith("bearer "):
+            token = authz[7:].strip()
     if not token:
         return None
     return await get_user_by_token(token)
 
 @app.get("/api/genie/conversations")
-async def get_conversations(authorization: str = Header("")):
-    user = await _genie_user(authorization)
+async def get_conversations(request: Request):
+    user = await _genie_user(request)
     if not user:
         raise HTTPException(401, "Authentication required")
     return await get_genie_conversations(user["id"])
 
 @app.get("/api/genie/conversations/{conv_id}")
-async def get_conversation(conv_id: str, authorization: str = Header("")):
-    user = await _genie_user(authorization)
+async def get_conversation(conv_id: str, request: Request):
+    user = await _genie_user(request)
     if not user:
         raise HTTPException(401, "Authentication required")
     conv = await get_genie_conversation(conv_id, user["id"])
@@ -2090,8 +2101,8 @@ async def get_conversation(conv_id: str, authorization: str = Header("")):
     return conv
 
 @app.post("/api/genie/conversations")
-async def create_conversation(body: dict, authorization: str = Header("")):
-    user = await _genie_user(authorization)
+async def create_conversation(body: dict, request: Request):
+    user = await _genie_user(request)
     if not user:
         raise HTTPException(401, "Authentication required")
     conv_id = generate_id("CONV")
@@ -2101,8 +2112,8 @@ async def create_conversation(body: dict, authorization: str = Header("")):
     return await get_genie_conversation(conv_id, user["id"])
 
 @app.delete("/api/genie/conversations/{conv_id}")
-async def delete_conversation(conv_id: str, authorization: str = Header("")):
-    user = await _genie_user(authorization)
+async def delete_conversation(conv_id: str, request: Request):
+    user = await _genie_user(request)
     if not user:
         raise HTTPException(401, "Authentication required")
     if not await delete_genie_conversation(conv_id, user["id"]):
@@ -2110,9 +2121,9 @@ async def delete_conversation(conv_id: str, authorization: str = Header("")):
     return {"deleted": True, "id": conv_id}
 
 @app.put("/api/genie/conversations/{conv_id}/agent")
-async def save_agent_context(conv_id: str, body: dict, authorization: str = Header("")):
+async def save_agent_context(conv_id: str, body: dict, request: Request):
     """Persist the full agent context so a conversation can be resumed later."""
-    user = await _genie_user(authorization)
+    user = await _genie_user(request)
     if not user:
         raise HTTPException(401, "Authentication required")
     user_id = user["id"]
@@ -2133,9 +2144,9 @@ class GenieAskBody(BaseModel):
     threadId: str = ""
 
 @app.post("/api/genie/ask")
-async def genie_ask(body: GenieAskBody, authorization: str = Header("")):
+async def genie_ask(body: GenieAskBody, request: Request):
     """Ask a natural-language data question against the Databricks Genie space."""
-    user = await _genie_user(authorization)
+    user = await _genie_user(request)
     if not user:
         raise HTTPException(401, "Authentication required")
     question = body.question.strip()
@@ -2149,9 +2160,9 @@ async def genie_ask(body: GenieAskBody, authorization: str = Header("")):
         raise HTTPException(502, f"Genie backend error: {e}")
 
 @app.post("/api/genie/ask/reset")
-async def genie_ask_reset(body: dict, authorization: str = Header("")):
+async def genie_ask_reset(body: dict, request: Request):
     """Drop the cached Genie conversation for a thread so the next ask starts fresh."""
-    user = await _genie_user(authorization)
+    user = await _genie_user(request)
     if not user:
         raise HTTPException(401, "Authentication required")
     genie.set_conversation(str(body.get("threadId", "")), None)
