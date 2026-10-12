@@ -568,7 +568,7 @@ def _clamp_confidence(value: Any) -> float:
 # ---------------------------------------------------------------------------
 
 async def _run_passes(
-    client: OpenAI,
+    client: Any,
     model: str,
     images: List[tuple[str, str]],
     precision_mode: bool,
