@@ -66,6 +66,12 @@ mount_frontend(app)
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("CRYOSYNC_PORT", os.getenv("PORT", "8080")))
-    host = os.getenv("CRYOSYNC_HOST", "0.0.0.0")
+    port = int(
+        os.getenv("CRYOSYNC_PORT")
+        or os.getenv("DATABRICKS_APP_PORT")
+        or os.getenv("UVICORN_PORT")
+        or os.getenv("PORT")
+        or "8080"
+    )
+    host = os.getenv("CRYOSYNC_HOST") or os.getenv("UVICORN_HOST") or "0.0.0.0"
     uvicorn.run(app, host=host, port=port, log_level="info")

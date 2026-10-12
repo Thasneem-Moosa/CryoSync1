@@ -40,5 +40,6 @@ jobs:
       - name: Deploy bundle
         run: databricks bundle deploy --target prod
 
-      - name: Start / restart the app
-        run: databricks bundle run cryosync --target prod
+      # The CryoSync web app is deployed from Git via the Databricks Apps UI
+      # (auto-deploy on push), not through this bundle, so there is no
+      # `bundle run` step here. This workflow only deploys the analytics job.

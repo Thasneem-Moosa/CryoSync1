@@ -1,0 +1,63 @@
+# Databricks Apps execution config for CryoSync.
+#
+# Because package.json exists at the repo root, the Databricks Apps build does:
+#   1. npm install  +  npm run build   (Vite -> dist/)
+#   2. pip install -r requirements.txt
+#   3. run the command below
+# The command starts the FastAPI backend (run_server.py), which also serves the
+# built React frontend from dist/ on the port Databricks assigns
+# (DATABRICKS_APP_PORT).
+command:
+  - python
+  - run_server.py
+
+# Non-secret, environment-specific configuration is versioned here.
+#
+# Secrets are NOT stored in git (this repository is public). They live in the
+# Databricks secret scope `cryosync` and are exposed to the app through App
+# Resources, then referenced below with valueFrom:
+#   databricks_token     -> DATABRICKS_TOKEN      (PAT for SQL warehouse, Genie, model serving)
+#   openai_api_key       -> OPENAI_API_KEY        (bearer token for model-serving endpoints)
+#   zoho_client_id       -> ZOHO_CLIENT_ID
+#   zoho_client_secret   -> ZOHO_CLIENT_SECRET
+#   zoho_refresh_token   -> ZOHO_REFRESH_TOKEN
+#
+# Only resource names are versioned here; the secret values stay in the scope.
+#
+# DATABRICKS_HOST is injected automatically by the Databricks Apps runtime, so
+# it is intentionally not set here.
+env:
+  - name: DATABRICKS_TOKEN
+    valueFrom: databricks_token
+  - name: OPENAI_API_KEY
+    valueFrom: openai_api_key
+  - name: ZOHO_CLIENT_ID
+    valueFrom: zoho_client_id
+  - name: ZOHO_CLIENT_SECRET
+    valueFrom: zoho_client_secret
+  - name: ZOHO_REFRESH_TOKEN
+    valueFrom: zoho_refresh_token
+  - name: CRYOSYNC_DB_BACKEND
+    value: databricks
+  - name: DATABRICKS_HTTP_PATH
+    value: /sql/1.0/warehouses/21c1e9ba9ca28076
+  - name: DATABRICKS_CATALOG
+    value: cryosync_catalog
+  - name: DATABRICKS_BRONZE_SCHEMA
+    value: bronze
+  - name: OPENAI_BASE_URL
+    value: https://dbc-cbb34da0-57d2.cloud.databricks.com/serving-endpoints/databricks-meta-llama-3-3-70b-instruct/invocations
+  - name: OPENAI_MODEL
+    value: databricks-meta-llama-3-3-70b-instruct
+  - name: OPENAI_VISION_MODEL
+    value: databricks-llama-4-maverick
+  - name: OPENAI_VISION_BASE_URL
+    value: https://dbc-cbb34da0-57d2.cloud.databricks.com/serving-endpoints/databricks-llama-4-maverick/invocations
+  - name: GENIE_SPACE_ID
+    value: "01f1a85b27c212f585967a8e60077bc3"
+  - name: ZOHO_REGION
+    value: in
+  - name: ZOHO_API_URL
+    value: https://www.zohoapis.in/crm/v7
+  - name: ZOHO_ACCOUNTS_URL
+    value: https://accounts.zoho.in
