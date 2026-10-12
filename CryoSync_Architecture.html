@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CryoSync — System Architecture &amp; Data Lineage</title>
+<style>
+  :root{
+    --bg:#0B1220; --panel:#0F172A; --card:#121A2E; --card2:#0E1626; --line:#22304C;
+    --txt:#E6EDF7; --dim:#7B8CA6; --light:#B0C4DE;
+    --blue:#00A6D6; --cyan:#00B4D8; --green:#00C853; --orange:#FF8C00;
+    --purple:#AA66FF; --red:#FF6B6B;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg); color:var(--txt);
+    font-family:"Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif; overflow:hidden;}
+  a{color:var(--cyan)}
+
+  header{position:fixed; inset:0 0 auto 0; height:52px; z-index:40;
+    display:flex; align-items:center; gap:14px; padding:0 16px;
+    background:linear-gradient(180deg,#101A30,#0B1220); border-bottom:1px solid var(--line);}
+  header .logo{display:flex;align-items:center;gap:10px;font-weight:700;white-space:nowrap}
+  header .logo .dot{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--cyan),var(--blue));box-shadow:0 0 14px rgba(0,180,216,.55);position:relative}
+  header .logo .dot::after{content:"";position:absolute;left:7px;top:8px;width:12px;height:10px;border:2px solid #06283a;border-radius:50%}
+  header .title{color:var(--dim);font-size:12px;white-space:nowrap;border-left:1px solid var(--line);padding-left:14px}
+  header .title b{color:var(--txt);font-weight:600}
+  .tabs{margin-left:auto;display:flex;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .tab{font-size:12px;color:var(--dim);background:transparent;border:none;border-radius:7px;padding:6px 12px;cursor:pointer;white-space:nowrap;transition:all .15s}
+  .tab:hover{color:var(--txt)}
+  .tab.on{background:linear-gradient(135deg,var(--cyan),var(--blue));color:#06283a;font-weight:700}
+  .btn{background:var(--card);border:1px solid var(--line);color:var(--light);font-size:12px;border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap;transition:all .15s}
+  .btn:hover{color:#fff;border-color:var(--cyan);box-shadow:0 0 10px rgba(0,180,216,.25)}
+  .btn.tool{width:30px;height:30px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:14px}
+  .sep{width:1px;height:22px;background:var(--line)}
+  .hint{font-size:10.5px;color:var(--dim);white-space:nowrap}
+
+  #stage{position:fixed;inset:52px 380px 0 0;overflow:hidden;background:
+    radial-gradient(1200px 600px at 20% 0%, #101B33 0%, var(--bg) 55%)}
+  svg#canvas{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+  svg#canvas.dragging{cursor:grabbing}
+
+  .bandcard{fill:var(--card);stroke:var(--line);stroke-width:1.2;rx:14}
+  .bandtitle{font-size:15px;font-weight:700;letter-spacing:1px}
+  .bandnote{font-size:10.5px;fill:var(--dim)}
+  .layerlabel{font-size:10px;font-weight:700;letter-spacing:1px;fill:var(--dim)}
+  .boxtap{fill:var(--card2);stroke-width:1.4;rx:10;cursor:pointer;transition:filter .15s ease}
+  .boxtitle{font-size:12px;font-weight:600;fill:#fff;pointer-events:none}
+  .boxsub{font-size:9px;fill:var(--dim);pointer-events:none}
+  .box:hover .boxtap,.box.selected .boxtap{filter:drop-shadow(0 0 9px rgba(0,180,216,.5))}
+  .box.selected .boxtap{stroke:var(--cyan)!important;stroke-width:2.2}
+  .band.active .bandcard{filter:drop-shadow(0 0 14px rgba(0,180,216,.35))}
+  #canvas.focusLayer .band{opacity:.14}
+  #canvas.focusLayer .band.active{opacity:1}
+  .band{transition:opacity .2s ease}
+
+  .stagecol .sc-head{font-size:13px;font-weight:700;letter-spacing:.5px}
+  .stagecol .sc-note{font-size:9.5px;fill:var(--dim)}
+  .sc-card{fill:var(--card2);stroke-width:1.2;rx:8;cursor:pointer;transition:filter .15s}
+  .sc-title{font-size:10.5px;font-weight:600;fill:#fff;pointer-events:none}
+  .sc-sub{font-size:8.5px;fill:var(--dim);pointer-events:none}
+  .sc-card:hover,.sc-card.selected{filter:drop-shadow(0 0 8px rgba(0,180,216,.45))}
+  .sc-card.selected{stroke:var(--cyan)!important;stroke-width:2}
+  .stagetitle{font-size:17px;font-weight:700;letter-spacing:.5px}
+
+  .edge{fill:none;stroke-width:1.8;cursor:pointer;transition:stroke-width .1s}
+  .edge.thin{stroke-width:1.2}
+  .edge:hover{stroke-width:2.6!important;filter:drop-shadow(0 0 6px rgba(0,180,216,.6))}
+  .edge.selected{stroke-width:2.8!important}
+  .elabel rect{fill:#0F1B31;stroke:#2A3A5C;rx:6}
+  .elabel text{font-size:9px;fill:var(--light)}
+  .elabel.small text{font-size:8px}
+  .elabel:hover rect{stroke:var(--cyan)}
+  .leg-dot{stroke:#0B1220;stroke-width:1}
+
+  g.flownum circle{fill:var(--cyan);stroke-width:1.6}
+  g.flownum text{font-size:8.5px;font-weight:700;fill:#0B1220;text-anchor:middle}
+  .legendsw{display:flex;gap:14px;flex-wrap:wrap}
+  .legendsw span{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--dim)}
+
+  /* ---- panel ---- */
+  #panel{position:fixed; top:52px; right:0; bottom:0; width:380px; z-index:30;
+    background:var(--panel); border-left:1px solid var(--line);
+    overflow-y:auto; padding:20px 20px 40px; transform:translateX(0); transition:transform .25s ease;}
+  #panel.closed{transform:translateX(105%)}
+  #panel .phead{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-right:26px}
+  #panel .picon{width:36px;height:36px;border-radius:9px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:16px}
+  #panel .ptitle{font-size:15px;font-weight:700;line-height:1.2}
+  #panel .psub{font-size:11px;color:var(--dim);margin-top:2px}
+  #panel .play{font-size:9.5px;font-weight:700;letter-spacing:1.5px;color:var(--dim);text-transform:uppercase;margin:14px 0 4px;display:block}
+  #panel .pclose{position:absolute;top:14px;right:14px;width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--light);cursor:pointer;font-size:14px;z-index:5}
+  #panel .pclose:hover{color:#fff;border-color:var(--red)}
+  #panel ul{list-style:none;padding:0;margin:0}
+  #panel li{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12px;line-height:1.5;color:var(--light)}
+  #panel li b{color:var(--txt);display:block;font-size:10px;letter-spacing:.5px;text-transform:uppercase;margin-bottom:2px;font-weight:700}
+  #panel li code{background:#0B1526;border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:10.5px;color:var(--cyan);font-family:Consolas,monospace}
+  #panel .empty{color:var(--dim);font-size:12.5px;line-height:1.6}
+  #panel .empty b{color:var(--cyan)}
+  #panel .txnum{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--cyan);color:#06283a;font-size:10px;font-weight:700;margin-right:6px}
+
+  @media (max-width:1100px){
+    #stage{inset:52px 0 0 0}
+    #panel{width:100%;top:52px;box-shadow:0 -4px 24px rgba(0,0,0,.5)}
+    header .hint, header .sep{display:none}
+    header .title{display:none}
+  }
+  @media print{
+    body{overflow:visible}
+    header,#panel,.toolbar{display:none !important}
+    #stage{position:static;inset:auto;height:auto;overflow:visible}
+    svg#canvas{width:1900px;height:auto}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="dot"></div>CryoSync</div>
+  <div class="title" id="hdrTitle"><b>Cold-Chain Intelligence Platform</b> — architecture / data lineage</div>
+  <div class="tabs">
+    <button class="tab on" id="tabSystem" onclick="switchView('system')">System &amp; Transactions</button>
+    <button class="tab" id="tabLineage" onclick="switchView('lineage')">Data Lineage → Databricks</button>
+  </div>
+  <div class="sep"></div>
+  <span class="hint">click a node or flow for detail · drag to pan · scroll to zoom</span>
+</header>
+
+<div id="stage">
+  <div class="toolbar" style="position:absolute;top:10px;right:10px;z-index:20;display:flex;gap:6px">
+    <button class="btn tool" title="Zoom in" onclick="zoom(1.35)">+</button>
+    <button class="btn tool" title="Zoom out" onclick="zoom(0.74)">−</button>
+    <button class="btn" onclick="fit()">Fit</button>
+    <button class="btn tool" title="Export / print" onclick="window.print()">⧉</button>
+  </div>
+  <svg id="canvas"></svg>
+</div>
+
+<aside id="panel">
+  <button class="pclose" onclick="document.getElementById('panel').classList.add('closed')">×</button>
+  <div class="empty" id="panelEmpty">
+    <b>CryoSync — Architecture &amp; Data Lineage</b><br/><br/>
+    Two views, two questions:<br/><br/>
+    <b>System &amp; Transactions</b> — the full runtime stack and the concrete
+    HTTP routes / sync scripts that move data between every box.<br/><br/>
+    <b>Data Lineage → Databricks</b> — exactly how every source system's data
+    reaches the lakehouse: source → bronze → silver → gold → consumers, with
+    the pipeline mechanism on each arrow.<br/><br/>
+    Click any node or arrow for detail. Drag to pan, scroll / +− to zoom, ⧉ to export.
+  </div>
+  <div id="panelBody" style="display:none"></div>
+</aside>
+
+<script>
+"use strict";
+/* ============================================================
+   COLORS
+============================================================ */
+var C = { blue:"#00A6D6", cyan:"#00B4D8", green:"#00C853", orange:"#FF8C00",
+          purple:"#AA66FF", red:"#FF6B6B", light:"#B0C4DE", dim:"#607090" };
+var EDGE_C = { http:C.cyan, db:C.orange, ai:C.purple, sync:C.green, deploy:C.red, int:C.light };
+
+/* ============================================================
+   DETAILS — deep-dive text per node, shared by both views
+============================================================ */
+var D = {};
+function _d(id, t, s, c, items){ D[id]={t:t,s:s,c:c,it:items}; }
+
+/* ---------- USERS ---------- */
+_d("u1","Collection Staff","intake · barcode · receiving",C.blue,[
+  "Role: collection — front-line intake at the lab.",
+  ["Gate","permission act:create_cbu authorizes 'Start Receiving' from a scanned shipment."]]);
+_d("u2","Quality Assurance","compliance · risk · AI scans",C.green,[
+  "Role: qa — owns compliance incidents.",
+  "Resolve/assign incidents, bulk-resolve open issues, trigger AI temp scan."]);
+_d("u3","Client Services","families · referrals · billing",C.orange,[
+  "Role: cs — families, enrollments, plans & payments."]);
+_d("u4","Processing","QC · lab results · transplants",C.cyan,[
+  "Role: processing — reviews & confirms lab reports, releases units."]);
+_d("u5","Administrator","system · lakehouse · sync ops",C.red,[
+  "Role: admin — /admin page, lakebase/bronze browsing, delta ops, manual Zoho sync trigger."]);
+_d("u6","Web Browser","desktop / mobile responsive",C[ "light"],[
+  "Delivered over HTTPS, responsive. Everything runs in the browser; the SPA is served by the same origin as the API in production."]);
+_d("u7","RBAC & Sessions","PBKDF2 · 7-day tokens",C.purple,[
+  "Authentication is NOT JWT — random server-issued token in the sessions table, 7-day TTL.",
+  ["Transport","'Authorization: Bearer <token>' (or ?token=) on every /api call."],
+  "Middleware gates all /api/* except /auth/login, /auth/me, /system/health.",
+  ["Note","RBAC is auth-first; role gates live mostly in the frontend permission map."]]);
+
+/* ---------- FRONTEND ---------- */
+_d("f_dash","Dashboard / Command Center","observatory · filter board · maps",C.cyan,[
+  "KPI grid + ~50 recharts, 13-dim global filter bar, world + US maps, snapshot export.",
+  ["Feed","GET /api/dashboard?facility=&dateRange=&search= — deterministic seeded aggregates."]]);
+_d("f_cbu","CBU Tracking","cord blood unit lifecycle",C.blue,[["Feed","GET /api/pages/cbu-units."]]);
+_d("f_families","Families & Care","customers page",C.blue,[["Feed","GET /api/pages/customers."]]);
+_d("f_storage","Cryostorage","storage zones · tanks",C.cyan,[["Feed","GET /api/pages/storage · /api/inventory/storage-zones."]]);
+_d("f_compl","Compliance","incidents · deviations · audit",C.orange,[
+  "Incident grid, excursion chart, detail drawer.",
+  ["Action","'Scan' → POST /api/ai/temp-incidents/scan."]]);
+_d("f_transplant","Clinical Release","transplants",C.red,[["Feed","GET /api/pages/transplants."]]);
+_d("f_pay","Plans & Billing","payments",C.orange,[["Feed","GET /api/pages/payments."]]);
+_d("f_branches","Branches","referrals + franchisees",C.purple,[["Feed","GET /api/pages/referrals · /franchisees."]]);
+_d("f_receiving","Receiving / Intake","multistep + barcode scan",C.green,[
+  "Tabs: New Intake / Pending / Barcode Scan. 3 consecutive ZXing reads → shipment lookup → prefill.",
+  ["Transactions","GET /api/shipments?search=<barcode> → POST /api/shipments (creates SHP-<ts>-<hex>)."],
+  ["AI prefill","sessionStorage cryosync.ai-extract-prefill fills the form from AI Extract."]]);
+_d("f_extract","AI Extract","Standard vs Precision",C.purple,[
+  "Upload PNG/JPEG/WebP/PDF ≤12MB ≤20pp; Standard (single-pass) vs Precision (two-pass verify).",
+  ["Transactions","POST /api/ai/extract-form · POST /api/ai/extract-compare."],
+  "Shows confidence / evidence / needsReview (threshold 0.7); stages prefill for Receiving."]);
+_d("f_lab","Lab Reports","list · detail · CSV import",C.green,[["Transactions","GET /api/lab-reports · POST /api/lab-reports/upload (multipart CSV/Excel)."]]);
+_d("f_kyra","Ask Kyra","AI copilot · voice · charts",C.purple,[
+  "Chat page with Markdown/SQL (SqlViewer)/charts/Genie tables; voice STT+TTS+VU meter.",
+  ["Transactions","POST /api/genie/ask · POST /api/agent/chat · PUT /genie/conversations/:id/agent."]]);
+_d("f_admin","Admin & Sync","system / lakehouse ops",C.orange,[
+  "Health overview, service status grid, logs, metrics.",
+  ["Transactions","GET /api/system/health · GET /api/system/logs · POST /api/admin/sync-zoho."]]);
+_d("f_query","TanStack Query + services","typed API layer",C.blue,[
+  "RealApiClient injects Bearer token; 401 → clear session → /login.",
+  "staleTime 30s, retry 1. Per-domain services for all API groups."]);
+_d("f_zustand","Zustand stores","auth · app · theme",C.light,[
+  "auth (localStorage 'labs-auth', role-validated on rehydrate), app (sidebar/breadcrumbs/notifications/filters), theme (dark default)."]);
+_d("f_ui","UI kit","shadcn/ui on Base UI",C.cyan,[
+  "19 shadcn primitives on @base-ui/react + CVA, tailwind-merge, cmdk palette, Framer Motion."]);
+_d("f_charts","Charts","~50 Recharts + SVG",C.green,[
+  "Recharts dashboard/components + bespoke SVG (Sankey, sunburst, chord, streamgraph…). In-chat chart renderer for create_chart tool output."]);
+_d("f_maps","Maps","d3-geo / topojson",C.green,[
+  "World maps (world-atlas 110m) for branch/clinic network & risk; US regional chart via us-states-10m.json (FIPS → census region + facility pins)."]);
+_d("f_barcode","Barcode scanning","ZXing · native detector",C.orange,[
+  "MultiFormatReader (QR, Code128/39/93, EAN8/13, ITF, UPC-A/E) + BarcodeDetector fallback; camera stream, 100ms loop, 3-read confirm."]);
+_d("f_voice","Voice I/O","STT · TTS · VU meter",C.purple,[
+  "Web Speech continuous STT w/ 3s silence stop; speechSynthesis TTS; AnalyserNode VU meter."]);
+_d("f_router","Routing & Guard","lazy routes · permissions",C.red,[
+  "React Router 7, lazy + Suspense; RequireAuth → /login with state.from; permissions map → AccessDenied."]);
+
+/* ---------- BACKEND ---------- */
+_d("b_auth","Auth & RBAC","sessions · PBKDF2 · middleware",C.blue,[
+  ["Endpoints","POST /api/auth/login · GET /api/auth/me · POST /api/auth/logout · GET /api/system/health · /logs."],
+  "Lifespan startup: init_db → seed_database → seed_enterprise → backfill runtime links → start loops."]);
+_d("b_ship","Shipments & Logistics","cold-chain flow",C.cyan,[
+  ["Endpoints","GET/POST/PUT/DELETE /api/shipments · /status · /loggers · /readings · receiving/checklist · disposition."],
+  "Tracks regime, carrier, condition, PO/priority; excursion detection over readings."]);
+_d("b_receive","Receiving / Disposition","intake · QC · disposition",C.green,[
+  "Multi-step receiving checklist; barcode-driven intake creation; disposition for rejected units."]);
+_d("b_inv","Inventory & Storage","lots · zones · units",C.orange,[["Endpoints","GET /api/inventory/lots · /lots/{id} · /storage-zones."]]);
+_d("b_compl","Compliance & Audit","incidents · audit log",C.red,[
+  ["Endpoints","GET/POST/PUT /api/compliance/incidents · /{id} · /resolve · /resolve-open · /assign · /audit-log."]]);
+_d("b_lab","Lab Reports Ingestion","pandas · CSV/Excel",C.green,[
+  ["Endpoints","POST /api/lab-reports/upload · /preview · /confirm · /batches · /{report_id}."],
+  "Normalizes columns (FIELD_ALIASES), unknown cols → details JSON, import trace in csv_import_batches."]);
+_d("b_extract","AI Extract — Vision OCR","extract.py · 2 modes",C.purple,[
+  "Standard = 1 call (temp .1) · Precision = 2 calls (temp 0.0) + disagreement correction + verified flag.",
+  "PyMuPDF renders PDFs (≤20pp, 1800px) → vision model → per-field confidence/evidence/needsReview(0.7).",
+  ["Endpoints","POST /api/ai/extract-form · /api/ai/extract-compare."]]);
+_d("b_agent","Kyra Agent — tool loop","agent.py",C.purple,[
+  "OpenAI-compatible tool-calling loop (~30 tools, ≤40 iterations). Permission-gated via TOOL_PERMISSIONS.",
+  "Tools: shipments, inventory, compliance, storage, dashboards, risk, system, create_chart, ask_genie.",
+  ["Endpoint","POST /api/agent/chat."]]);
+_d("b_genie","Databricks Genie adapter","genie.py",C.purple,[
+  "Creates Genie conversation → posts message → polls until terminal → returns rows+SQL+suggestions.",
+  "In-memory thread cache. Env: GENIE_SPACE_ID, DATABRICKS_HOST/TOKEN.",
+  ["Endpoints","/api/genie/conversations CRUD · /ask · /ask/reset."]]);
+_d("b_scan","Temp Excursion Scanner","background rule engine",C.red,[
+  "asyncio loop (AI_SCAN_INTERVAL_MINUTES, default 1) scans readings → writes compliance_incidents.",
+  "Dedup window 168h. Manual trigger POST /api/ai/temp-incidents/scan."]);
+_d("b_pages","Pages Aggregators","7 secondary pages",C.cyan,[
+  ["Endpoints","GET /api/pages/cbu-units · /customers · /storage · /transplants · /payments · /referrals · /franchisees · /content."],
+  "Returns {records, charts, kpis} from the seeded aggregate model."]);
+_d("b_dash","Dashboard / Analytics","KPIs + chart payloads",C.blue,[["Endpoints","GET /api/dashboard · POST /api/dashboard/refresh."]]);
+_d("b_admin","Admin Ops","sync · lakebase · delta",C.orange,[
+  ["Endpoints","POST /api/admin/sync-zoho · GET /api/lakebase/tables* · /api/deltalake/tables*."],
+  ["Honesty note","Delta ops (optimize/vacuum/zorder) return deterministic simulated values."]]);
+_d("b_sys","System Health & Logs","observability",C.light,[["Endpoints","GET /api/system/health · /api/system/logs."]]);
+_d("b_db","Dual DB adapter","SQLite ⇄ Databricks SQL",C.orange,[
+  "Same asyncpg-style API over two backends chosen by CRYOSYNC_DB_BACKEND.",
+  ["sqlite","database.py → aiosqlite + embedded Postgres→SQLite translator ($1 → ?, LIMIT 1…)."],
+  ["databricks","database_databricks.py → databricks-sql-connector; rewrites ->> as GET_JSON_OBJECT, inserts as MERGE INTO."],
+  "No Spark here — direct SQL to the warehouse/endpoint."]);
+_d("b_loops","Background loops","asyncio tasks",C.light,[
+  "Two cancellable loops in lifespan: temp-incident scanner (1 min) and Zoho sync (60 min, databricks backend only).",
+  "Long sync via asyncio.to_thread; interval 0 disables."]);
+_d("b_server","run_server.py","single-process deploy",C.green,[
+  "Serves FastAPI (/api/*) AND built React dist/ with SPA fallback — one origin.",
+  "Port CRYOSYNC_PORT/PORT (default 8080). Dev: Vite proxy /api → localhost:8000."]);
+
+/* ---------- DATA ---------- */
+_d("bronze","BRONZE — raw","cryosync_catalog.bronze",C.orange,[
+  "Raw landing: zoho_* (CRM mirror), raw temp logs, lab report blobs, operational table mirror.",
+  "Tables: families, enrollments, collection_kits, cord_blood_units, storage_tanks, tank_temperature_logs, transplant_records, payment_transactions, referral_sources, branches, content_documents, lab_test_reports + control tables sync_watermark, crm_sync_log."]);
+_d("silver","SILVER — cleansed","cryosync_catalog.silver",C.light,[
+  "Cleansed & conformed: families (stitched with Zoho contacts on crm_id), enrollments, cord_blood_units, storage_tanks, tank_temperature_logs, lab_test_reports, transplant_records.",
+  "Enums mirrored from stemcyte_schema.sql."]);
+_d("gold","GOLD — analytics","cryosync_catalog.gold",C.green,[
+  "KPIs, unit_summary, enrollment_funnel + live views for dashboards.",
+  "Table COMMENTs let Databricks Genie interpret business terms; gold.v_unit_inventory view for Genie."]);
+_d("sync","Incremental sync","watermark-based",C.cyan,[
+  "sync_to_databricks.py: SQLite→bronze using sync_watermark; UPDATE_TRACKED (updated_at) vs APPEND_ONLY (sessions, tank_temperature_logs)."]);
+_d("migrate","One-time migration","full load",C.purple,[
+  "migrate_to_databricks.py: ordered full load across tables; --table / --dry-run flags."]);
+_d("zohosync","Zoho → Bronze","one-way CRM mirror",C.orange,[
+  "sync_zoho_to_databricks.py: module-based incremental pull by Modified_Time; progress in crm_sync_log.",
+  "Runs as background loop + manual /api/admin/sync-zoho."]);
+_d("job","Nightly transform job","bronze → silver → gold",C.green,[
+  "DAB (databricks.yml): cron 02:00 UTC, i3.xlarge, Spark 15.4.x singleton. Currently PAUSED until bronze seeded.",
+  "Notebook build_silver_gold (PySpark) or build_silver_gold_sql.py via SQL warehouse."]);
+_d("sqlite","SQLite fallback","self-hosted bronze",C.light,[
+  "backend/cryosync.db when CRYOSYNC_DB_BACKEND=sqlite — local/first-turn source of truth for migration & sync."]);
+_d("delta","Delta ops APIs","simulation",C.cyan,[
+  "Optimize/vacuum/zorder surfaces exist as routes but return deterministic mock values."]);
+
+/* ---------- EXTERNAL ---------- */
+_d("zoho","Zoho CRM v7","→ bronze.zoho_*",C.orange,[
+  "Families, enrollments, leads mirror. REST v7 + OAuth2 refresh-token flow.",
+  "Incremental, module-based pull on Modified_Time watermark; target bronze.zoho_* tables."]);
+_d("iot","IoT / Telemetry","simulated sensors",C.cyan,[
+  "Temperature loggers + tank logs are SIMULATED & seeded (hourly LN2 traces, sine drift, transit excursions) — no hardware wired yet.",
+  "Surface: /api/shipments/{id}/loggers + /readings · tank_temperature_logs."]);
+_d("labins","Lab instruments & docs","PDF · image · CSV · Excel",C.green,[
+  "Vision extraction for PDF/images (extract.py) + pandas/openpyxl CSV/Excel bulk (lab_reports.py)."]);
+_d("llm","LLM serving","OpenAI-compatible",C.purple,[
+  "Chat model default gpt-4o-mini (Kyra agent); vision model llama-4-maverick (AI Extract) via own base URL.",
+  "Works with Databricks Model Serving / Together / OpenRouter / local vLLM·Ollama.",["Env","OPENAI_* + GENIE_SPACE_ID."]]);
+_d("dbrks","Databricks Workspace","hosting + analytics",C.blue,[
+  "Unity Catalog (bronze/silver/gold + comments), SQL warehouses (connector + Genie), Databricks Apps hosting, scheduled jobs.",
+  "Default host dbc-2a25661e-3f93.cloud.databricks.com."]);
+_d("actions","GitHub Actions → Apps","CI/CD",C.red,[
+  "deploy.yml: push main (or manual) → setup-cli → bundle validate → bundle deploy (prod) → bundle run cryosync.",
+  "Secrets: DATABRICKS_HOST, DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET. No test workflow — deploy-only."]);
+
+/* lineage-only nodes */
+_d("src_zoho","Zoho CRM v7","Contacts · Enrollments · Leads",C.orange,[
+  "Source of family/enrollment/lead records from the CRM.",["Sync","sync_zoho_to_databricks.py (OAuth2, Modified_Time)"]]);
+_d("src_sqlite","SQLite operational store","backend/cryosync.db",C.light,[
+  "Self-hosted app DB for local turns; the origin for the operational mirror.",["Tables","families, enrollments, collection_kits, cord_blood_units, storage_tanks, tank_temperature_logs, transplant_records, payments, referrals, branches, content_documents, lab_test_reports, sessions, users"]]);
+_d("src_lab","Lab instruments & reports","PDF · CSV · Excel",C.green,[
+  "Incoming lab test data via AI vision extraction and bulk CSV/Excel upload through /api/lab-reports/upload."]);
+_d("src_iot","IoT telemetry","simulated loggers",C.cyan,[
+  "Transport + tank logger readings. Currently simulated/seeded; writes tank_temperature_logs + shipment readings.",["Route","→ backend /api/shipments/{id}/readings → operational store"]]);
+_d("src_llm","LLM endpoints","chat + vision models",C.purple,[
+  "OpenAI-compatible model endpoints (chat for agent, vision for extract). They read no data — they are called BY the backend."]);
+_d("ing_migrate","migrate_to_databricks.py","one-time full load",C.purple,[["Mechanism","Reads SQLite tables in order, upserts into bronze (MERGE INTO)."]]);
+_d("ing_sync","sync_to_databricks.py","incremental, watermark",C.cyan,[["Mechanism","delta since sync_watermark; update-tracked vs append-only splits; writes bronze."]]);
+_d("ing_zoho","sync_zoho_to_databricks.py","CRM → bronze",C.orange,[["Mechanism","OAuth2 refresh + GET crm/v7/{module} by Modified_Time → bronze.zoho_*; logs to crm_sync_log."]]);
+_d("ing_lab","lab-report upload + regen","pandas · batch",C.green,[["Mechanism","/api/lab-reports/upload → csv_import_batches; regenerate_lab_reports.py seeds bronze.lab_test_reports."]]);
+_d("ing_loops","Background loops","scanner + zoho",C.light,[["Mechanism","temp scanner (1 min) writes compliance_incidents locally; zoho loop (60 min) → bronze."]]);
+_d("gold_gs","gold.v_unit_inventory","Genie view",C.green,[["View","unit_summary ⋈ latest lab test results; table COMMENTs for Genie comprehension."]]);
+_d("cons_genie","Databricks Genie","NL → SQL over gold",C.cyan,[
+  "Serves 'Ask Kyra': creates conversation, posts question, polls to terminal, returns rows+SQL.",
+  ["Consumes","gold tables incl. v_unit_inventory, unit_summary, enrollment_funnel, kpis."]]);
+_d("cons_dash","Dashboards & Pages","gold KPIs",C.blue,[
+  "Backend /api/dashboard and /api/pages/* aggregate from gold (or the deterministic local model)."]);
+_d("cons_conn","Backend SQL connector","bronze reads for ops",C.orange,[
+  "When CRYOSYNC_DB_BACKEND=databricks, operational reads/writes go straight to bronze via databricks-sql-connector (e.g. /api/cbu-details, Lakebase pages)."]);
+
+/* ============================================================
+   SVG HELPERS
+============================================================ */
+var W=1920, M=150, BAND_W = W-M*2, GX = W-22;
+var NS="http://www.w3.org/2000/svg";
+var svg = document.getElementById("canvas");
+var NODES = {};      /* id -> {cx, cy, w, h} for edge anchors */
+var H = 0;           /* canvas height (per view) */
+var view = "system";
+
+function el(name, attrs, parent){
+  var e=document.createElementNS(NS,name);
+  for(var k in attrs) e.setAttribute(k,attrs[k]);
+  if(parent) parent.appendChild(e);
+  return e;
+}
+function darken(hex,pct){
+  var n=parseInt(hex.slice(1),16), r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  r=Math.round(r*(1-pct)); g=Math.round(g*(1-pct)); b=Math.round(b*(1-pct));
+  return "#"+((r<<16)|(g<<8)|b).toString(16).padStart(6,"0");
+}
+function luma(hex){ var n=parseInt(hex.slice(1),16); return (((n>>16)&255)*299+((n>>8)&255)*587+(n&255)*114)/1000; }
+function txtColor(hex){ return luma(hex)>150 ? "#0B1220" : "#fff"; }
+function makeGrad(gid, c1, c2, vertical){
+  var lg=el("linearGradient",{id:gid,x1:0,y1:0,x2:vertical?0:1,y2:vertical?1:0},svg);
+  el("stop",{offset:"0%","stop-color":c1},lg); el("stop",{offset:"100%","stop-color":c2},lg);
+  return lg;
+}
+
+/* ---------- node rect helpers ---------- */
+function rect(cx, cy, w, h, fill, stroke, rx, parent, id){
+  var r=el("rect",{x:cx-w/2,y:cy-h/2,width:w,height:h,rx:(rx||10),fill:fill,stroke:stroke,"stroke-width":1.4},parent||svg);
+  if(id) NODES[id]={cx:cx,cy:cy,w:w,h:h};
+  return r;
+}
+function labelText(cx, cy, text, size, fill, anchor){
+  var t=el("text",{x:cx,y:cy,"text-anchor":anchor||"start","font-size":size||12,fill:fill||"#E6EDF7"},svg);
+  t.textContent=text;
+  return t;
+}
+
+/* ============================================================
+   SYSTEM VIEW
+============================================================ */
+var CONFIG = {
+  users:{cellW:168,gap:16,cellH:60,headerH:58,pad:16},
+  fe:   {cellW:212,gap:16,cellH:88,headerH:58,pad:16},
+  be:   {cellW:212,gap:16,cellH:92,headerH:58,pad:16},
+  data: {cellW:265,gap:16,cellH:100,headerH:58,pad:16},
+  ext:  {cellW:265,gap:16,cellH:92,headerH:58,pad:16}
+};
+var BANDS_SYS = [
+  {key:"users", name:"USERS & CHANNELS", color:C.blue,
+   note:"Session login (PBKDF2) · RBAC roles + permissions · 7-day tokens",
+   ids:["u1","u2","u3","u4","u5","u6","u7"], chips:["u1","u2","u3","u4","u5"]},
+  {key:"fe", name:"FRONTEND — REACT SPA", color:C.cyan,
+   note:"React 19 · TypeScript · Vite 8 · Tailwind 4 · shadcn/ui (Base UI) · TanStack Query 5 · Zustand 5 · React Router 7",
+   ids:["f_dash","f_cbu","f_families","f_storage","f_compl","f_transplant","f_pay","f_branches","f_receiving","f_extract","f_lab","f_kyra","f_admin","f_query","f_zustand","f_ui","f_charts","f_maps","f_barcode","f_voice","f_router"]},
+  {key:"be", name:"BACKEND — FASTAPI (SINGLE PROCESS)", color:C.green,
+   note:"Python · ~70 route decorators · asyncio loops (no Celery/Redis/WebSockets) · dual DB adapter · :8080 prod / :8000 dev",
+   ids:["b_auth","b_ship","b_receive","b_inv","b_compl","b_lab","b_extract","b_agent","b_genie","b_scan","b_pages","b_dash","b_admin","b_sys","b_db","b_loops","b_server"]},
+  {key:"data", name:"DATA & LAKEHOUSE — DATABRICKS UNITY CATALOG", color:C.orange,
+   note:"catalog: cryosync_catalog · schemas bronze/silver/gold · Delta Lake (ACID) · SQLite fallback for self-hosting",
+   ids:["bronze","migrate","zohosync","job","silver","gold","sqlite","sync","delta"]},
+  {key:"ext", name:"EXTERNAL SYSTEMS · AI & DEPLOYMENT", color:C.purple,
+   note:"Integrations in (→ bronze / backend) · CI/CD out (→ Databricks Apps)",
+   ids:["zoho","iot","labins","llm","dbrks","actions"]},
+];
+
+/* system-view transaction edges.
+   from/to are node ids; src/dst y taken from band layout.
+   w: weight (1 = normal, 2 = primary path) */
+var SYS_EDGES = [
+  {id:"t1", from:"u6", to:"f_query", kind:"http", w:2, label:"POST /api/auth/login → session token (7-day)"},
+  {id:"t2", from:"f_query", to:"b_auth", kind:"http", w:2, label:"HTTPS /api/* · Bearer session token · 401 → /login"},
+  {id:"t3", from:"f_dash", to:"b_dash", kind:"http", label:"GET /api/dashboard?facility=&dateRange=&search="},
+  {id:"t4", from:"f_receiving", to:"b_ship", kind:"http", label:"GET /api/shipments?search= · POST /api/shipments"},
+  {id:"t5", from:"f_lab", to:"b_lab", kind:"http", label:"POST /api/lab-reports/upload (multipart CSV/Excel)"},
+  {id:"t6", from:"f_extract", to:"b_extract", kind:"http", label:"POST /api/ai/extract-form · /extract-compare"},
+  {id:"t7", from:"f_kyra", to:"b_agent", kind:"http", label:"POST /api/agent/chat (tool loop)"},
+  {id:"t8", from:"f_kyra", to:"b_genie", kind:"http", label:"POST /api/genie/ask · /ask/reset"},
+  {id:"t9", from:"f_compl", to:"b_scan", kind:"http", label:"POST /api/ai/temp-incidents/scan"},
+  {id:"t10", from:"f_admin", to:"b_admin", kind:"http", label:"POST /api/admin/sync-zoho"},
+  {id:"t11", from:"b_db", to:"sqlite", kind:"db", label:"aiosqlite · SELECT/INSERT · Postgres→SQLite rewrite"},
+  {id:"t12", from:"b_db", to:"bronze", kind:"db", label:"databricks-sql-connector · MERGE INTO bronze · GET_JSON_OBJECT"},
+  {id:"t13", from:"b_genie", to:"llm", kind:"ai", w:2, label:"Genie: create_conversation → post → poll terminal"},
+  {id:"t14", from:"b_agent", to:"llm", kind:"ai", w:2, label:"OpenAI-compatible chat + tool results (≤40 steps)"},
+  {id:"t15", from:"b_extract", to:"llm", kind:"ai", label:"Vision model · base64 images/PDF pages → fields"},
+  {id:"t16", from:"b_loops", to:"zoho", kind:"sync", label:"Zoho REST v7 · OAuth2 refresh · Modified_Time"},
+  {id:"t17", from:"zoho", to:"bronze", kind:"sync", w:2, label:"sync_zoho_to_databricks.py → bronze.zoho_*"},
+  {id:"t18", from:"sqlite", to:"bronze", kind:"sync", w:2, label:"migrate full · sync incremental (sync_watermark)"},
+  {id:"t19", from:"bronze", to:"silver", kind:"sync", w:2, label:"nightly 02:00 UTC · build_silver_gold (Spark 15.4)"},
+  {id:"t20", from:"silver", to:"gold", kind:"sync", label:"views: unit_summary · enrollment_funnel · kpis"},
+  {id:"t21", from:"gold", to:"llm", kind:"ai", label:"Genie SELECT over gold (v_unit_inventory)"},
+  {id:"t22", from:"actions", to:"dbrks", kind:"deploy", w:2, label:"push main → bundle validate → deploy → run cryosync"},
+];
+
+/* ---------- layout helpers ---------- */
+function bandY(key){
+  var y=30, hd=40;
+  for(var i=0;i<BANDS_SYS.length;i++){
+    var L=BANDS_SYS[i], cfg=CONFIG[L.key];
+    var cols=Math.max(1,Math.min(L.ids.length,Math.floor((BAND_W+cfg.gap)/(cfg.cellW+cfg.gap))));
+    var rows=Math.ceil(L.ids.length/cols);
+    if(L.key===key){ var bh=cfg.headerH+cfg.pad*2+rows*(cfg.cellH+cfg.gap)-cfg.gap; return {y:y+hd/2,h:bh,cfg:cfg,cols:cols,rows:rows}; }
+    y+=cfg.headerH+cfg.pad*2+rows*(cfg.cellH+cfg.gap)-cfg.gap+58;
+  }
+  return null;
+}
+function sysTotalHeight(){
+  var y=30+40/2;
+  for(var i=0;i<BANDS_SYS.length;i++){
+    var L=BANDS_SYS[i],cfg=CONFIG[L.key];
+    var cols=Math.max(1,Math.min(L.ids.length,Math.floor((BAND_W+cfg.gap)/(cfg.cellW+cfg.gap))));
+    var rows=Math.ceil(L.ids.length/cols);
+    y+=cfg.headerH+cfg.pad*2+rows*(cfg.cellH+cfg.gap)-cfg.gap;
+    if(i<BANDS_SYS.length-1)y+=58;
+  }
+  return y+40+64+FLOWS_SYS.length*22+40;
+}
+var FLOWS_SYS = [
+  "AUTH  u6→f_query  POST /api/auth/login → sessions.token (7-day) → Zustand persist → Bearer on /api/*",
+  "UI→API  f_query→b_auth  all /api/* REST · 401 clears session + redirects /login",
+  "DASHBOARD  f_dash→b_dash  GET /api/dashboard?facility=&dateRange=&search=",
+  "INTAKE  f_receiving→b_ship  barcode → GET /api/shipments?search= → POST /api/shipments (SHP-id)",
+  "LABS  f_lab→b_lab  POST /api/lab-reports/upload multipart → pandas → csv_import_batches",
+  "AI EXTRACT  f_extract→b_extract  POST /api/ai/extract-form → vision model → prefill(Receiving)",
+  "KYRA  f_kyra→b_agent→llm  POST /api/agent/chat tool loop (≤40) → tools + ask_genie",
+  "GENIE  f_kyra→b_genie→llm  POST /api/genie/ask → Genie conversation → gold tables",
+  "SCAN  f_compl→b_scan  POST /api/ai/temp-incidents/scan (or 1-min loop) → compliance_incidents",
+  "SYNC-MANUAL  f_admin→b_admin  POST /api/admin/sync-zoho (or 60-min loop)",
+  "PERSIST-CRUD  b_db→sqlite   aiosqlite + _translate_sql · SELECT/INSERT/UPDATE",
+  "PERSIST-CLOUD  b_db→bronze  databricks-sql-connector · MERGE INTO bronze · GET_JSON_OBJECT",
+  "CRM→BRONZE  b_loops→zoho→bronze  OAuth2 + Modified_Time → sync_zoho_to_databricks.py",
+  "SQLITE→BRONZE  sqlite→bronze  migrate_to_databricks.py (full) / sync_to_databricks.py (watermark)",
+  "MEDALLION  bronze→silver→gold  nightly 02:00 UTC job (build_silver_gold) · currently PAUSED",
+  "GENIE-SQL  gold→llm  Genie SELECT over gold.v_unit_inventory & friends",
+  "DEPLOY  actions→dbrks  GitHub Actions push main → bundle deploy/run → Databricks Apps",
+];
+
+/* ---------- render system view ---------- */
+function posOfNode(id){
+  for(var i=0;i<BANDS_SYS.length;i++){
+    var L=BANDS_SYS[i], cfg=CONFIG[L.key], b=bandY(L.key);
+    var cols=b.cols, rows=b.rows;
+    var bi=L.ids.indexOf(id);
+    if(bi<0) continue;
+    var r=Math.floor(bi/cols), c=bi%cols;
+    var x=M+c*(cfg.cellW+cfg.gap), y=b.y+cfg.headerH+r*(cfg.cellH+cfg.gap);
+    return {x:x+cfg.cellW/2, yTop:y, yBot:y+cfg.cellH, w:cfg.cellW, h:cfg.cellH, band:L.key, b:b};
+  }
+  return null;
+}
+
+function renderSystem(){
+  /* defs */
+  var defs=el("defs",{},svg);
+  el("marker",{id:"arrS",viewBox:"0 0 10 10",refX:8.5,refY:5,markerWidth:7,markerHeight:7,orient:"auto-start-reverse"},defs).innerHTML=
+    '<path d="M0,0 L10,5 L0,10 z" fill="#90A3BD"/>';
+  el("marker",{id:"arrH",viewBox:"0 0 10 10",refX:8.5,refY:5,markerWidth:7,markerHeight:7,orient:"auto-start-reverse"},defs).innerHTML=
+    '<path d="M0,0 L10,5 L0,10 z" fill="#00B4D8"/>';
+  makeGrad("gradBand","#182240","#121A2E",true);
+
+  /* bands + boxes */
+  var bands={};
+  BANDS_SYS.forEach(function(L){
+    var cfg=CONFIG[L.key], b=bandY(L.key); bands[L.key]=b;
+    var bg=el("g",{class:"band","data-layer":L.key},svg);
+    el("rect",{class:"bandcard",x:M-10,y:b.y,w:BAND_W+20,h:b.h,fill:"url(#gradBand)"},bg);
+    el("rect",{x:M-10,y:b.y,w:6,h:b.h,fill:L.color,rx:2},bg);
+    el("text",{class:"bandtitle",x:M+14,y:b.y+30,"fill":L.color},bg).textContent=L.name;
+    el("text",{class:"bandnote",x:M+14,y:b.y+47},bg).textContent=L.note;
+    var axis=el("text",{class:"layerlabel",x:GX+5,y:b.y+b.h/2,"text-anchor":"middle","transform":"rotate(-90 "+(GX+5)+" "+(b.y+b.h/2)+")"},bg);
+    axis.textContent=L.key.toUpperCase();
+
+    var cols=b.cols, rows=b.rows, x0=M, y0=b.y+cfg.headerH;
+    L.ids.forEach(function(id,i){
+      var r=Math.floor(i/cols), c=i%cols;
+      var x=x0+c*(cfg.cellW+cfg.gap), y=y0+r*(cfg.cellH+cfg.gap);
+      var d=D[id], col=d.c;
+      var g=el("g",{class:"box","transform":"translate("+x+" "+y+")","data-id":id,"tabindex":"0"},bg);
+      g.addEventListener("click",function(){ select(id); });
+      g.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault(); select(id);} });
+      var isChip=(L.chips&&L.chips.indexOf(id)>=0);
+      var h=isChip?cfg.cellH-26:cfg.cellH;
+      var top=isChip?12:0;
+      var tile=el("rect",{class:"boxtap",x:0,y:top,width:cfg.cellW,height:h,stroke:col},g);
+      el("rect",{x:0,y:top,width:cfg.cellW,height:3,fill:col,rx:2},g);
+      var t=el("text",{class:"boxtitle",x:12,y:top+22},g); t.textContent=d.t;
+      if(d.s){ var s=el("text",{class:"boxsub",x:12,y:top+cfg.cellH/2+8},g); s.textContent=d.s; }
+      var dot=el("circle",{cx:cfg.cellW-12,cy:top+12,r:3,fill:col},g);
+      var ttl=el("title",{},g); ttl.textContent=d.t+" — "+d.s;
+      NODES[id]={cx:x+cfg.cellW/2, cy:y+cfg.cellH/2, w:cfg.cellW, h:cfg.cellH, yTop:y, yBot:y+cfg.cellH, band:L.key, col:col};
+    });
+  });
+
+  /* ---------- EDGES ---------- */
+  var eg=el("g",{id:"edges"},svg);
+  SYS_EDGES.forEach(function(e){
+    var src=NODES[e.from], dst=NODES[e.to];
+    if(!src||!dst) return;
+    var sc=e.kind==="http"?C.cyan:e.kind==="db"?C.orange:e.kind==="ai"?C.purple:e.kind==="sync"?C.green:e.kind==="deploy"?C.red:C.light;
+
+    /* route: if src band above dst band -> vertical-ish through the legend area space */
+    var srcBandRank=BANDS_SYS.map(function(b){return b.key;}).indexOf(src.band);
+    var dstBandRank=BANDS_SYS.map(function(b){return b.key;}).indexOf(dst.band);
+    var gutterX=W-22;
+
+    var d, labelX, labelY, flip=false;
+    if(e.id==="t17"){        /* zoho -> bronze (up, right gutter) */
+      d="M "+src.cx+" "+(src.yBot)+" C "+src.cx+" "+(src.yBot+30)+", "+gutterX+" "+src.yBot+", "+gutterX+" "+src.yBot+" L "+gutterX+" "+(dst.yTop-6)+" L "+dst.cx+" "+(dst.yTop-6);
+      labelX=gutterX-10; labelY=(src.yBot+dst.yTop)/2; flip=true;
+    } else if(e.id==="t21"){ /* gold -> llm (down, right gutter) */
+      d="M "+src.cx+" "+(src.yBot)+" C "+src.cx+" "+(src.yBot+30)+", "+gutterX+" "+src.yBot+", "+gutterX+" "+src.yBot+" L "+gutterX+" "+(dst.yTop+4)+" L "+dst.cx+" "+(dst.yTop-6);
+      labelX=gutterX-10; labelY=(src.yBot+dst.yTop)/2; flip=true;
+    } else if(e.id==="t13"||e.id==="t14"||e.id==="t15"){ /* backend AI -> llm (down gutter) */
+      d="M "+src.cx+" "+(src.yBot)+" C "+src.cx+" "+(src.yBot+22)+", "+gutterX+" "+src.yBot+", "+gutterX+" "+src.yBot+" L "+gutterX+" "+(dst.yTop+4)+" L "+dst.cx+" "+(dst.yTop-4);
+      labelX=gutterX-10; labelY=(src.yBot+dst.yTop)/2; flip=true;
+    } else if(e.id==="t16"){ /* loops -> zoho (down gutter) */
+      d="M "+src.cx+" "+(src.yBot)+" C "+src.cx+" "+(src.yBot+26)+", "+gutterX+" "+src.yBot+", "+gutterX+" "+src.yBot+" L "+gutterX+" "+(dst.yTop-4)+" L "+dst.cx+" "+(dst.yTop-4);
+      labelX=gutterX-10; labelY=(src.yBot+dst.yTop)/2; flip=true;
+    } else if(e.id==="t22"){ /* actions -> dbrks (horizontal within ext) */
+      d="M "+src.cx+" "+src.yBot+" L "+dst.cx+" "+src.yBot;
+      labelX=(src.cx+dst.cx)/2; labelY=src.yBot-16; flip=false;
+    } else if(e.id==="t18"){ /* sqlite -> bronze (horizontal within data band, below) */
+      var sy=src.yBot+10;
+      d="M "+src.cx+" "+sy+" C "+(src.cx+40)+" "+sy+", "+(dst.cx-40)+" "+sy+", "+dst.cx+" "+(dst.yTop-2);
+      labelX=(src.cx+dst.cx)/2; labelY=sy-14; flip=false;
+    } else if(e.id==="t19"||e.id==="t20"){ /* bronze->silver / silver->gold (horizontal within data band) */
+      var yy=src.cy;
+      if(e.id==="t20") yy=dst.yTop-8;
+      d="M "+(src.cx+src.w/2+6)+" "+yy+" L "+(dst.cx-dst.w/2-6)+" "+yy;
+      labelX=(src.cx+dst.cx)/2; labelY=yy-14; flip=false;
+    } else if(srcBandRank < dstBandRank){   /* downward adjacent flows */
+      var my=(src.yBot+dst.yTop)/2;
+      d="M "+src.cx+" "+(src.yBot-3)+" C "+src.cx+" "+(my+6)+", "+dst.cx+" "+(my-6)+", "+dst.cx+" "+(dst.yTop-3);
+      labelX=(src.cx+dst.cx)/2; labelY=my; flip=false;
+    } else {                                  /* upward (within or near) */
+      var my2=(src.yTop+dst.yBot)/2;
+      d="M "+src.cx+" "+src.yTop+" C "+src.cx+" "+(my2-8)+", "+dst.cx+" "+(my2+8)+", "+dst.cx+" "+dst.yBot;
+      labelX=(src.cx+dst.cx)/2; labelY=my2; flip=false;
+    }
+
+    var edge=el("path",{id:"e-"+e.id,class:"edge"+(e.w===2?"":" thin"),d:d,stroke:sc,"marker-end":"url(#arrS)","data-k":e.kind},eg);
+    edge.addEventListener("click",function(){ selectEdge(e.id); });
+    var ttl=el("title",{},edge); ttl.textContent=(e.w===2?"PRIMARY · ":"")+e.label;
+
+    /* label chip */
+    var lg=el("g",{class:"elabel "+(e.label.length>46?"small":""),"transform":"translate("+labelX+" "+labelY+")",id:"el-"+e.id},eg);
+    var tw=Math.min(320, e.label.length*5.2+24);
+    el("rect",{x:-tw/2,y:-9,width:tw,height:18},lg);
+    var lx=el("text",{x:-tw/2+12,y:4},lg); lx.textContent=e.label;
+  });
+
+  /* flows legend — anchored to the system view's total height */
+  var fh=sysTotalHeight();
+  var fg=el("g",{id:"sysflows"},svg);
+  el("text",{class:"bandnote",x:M+8,y:fh-54,fill:"#7B8CA6"}).textContent="KEY TRANSACTIONS & FLOWS";
+  FLOWS_SYS.forEach(function(f,i){
+    var col=Math.floor(i/12), row=i%12;
+    var ax=M+12+col*760, ay=fh-36+row*22;
+    var g=el("g",{class:"flowtext"},fg);
+    var tt=el("title",{},g); tt.textContent=f;
+    el("circle",{cx:ax,cy:ay,r:6,fill:C.cyan,stroke:"#0B1220","stroke-width":1.2},g);
+    el("text",{x:ax,y:ay+2.5,class:"flownum","font-size":7.5},g).textContent=(i+1);
+    var tx=el("text",{x:ax+10,y:ay+3,class:"flowlab","fill":"#90A3BD","font-style":"normal","font-size":9},g);
+    tx.textContent=f;
+  });
+}
+
+/* ============================================================
+   LINEAGE VIEW
+============================================================ */
+/* stage columns: x, w, head, note, color; cards: id, height from content */
+var LIN = {
+  stages:[
+    {key:"src", head:"1 · SOURCES",     color:C.light, note:"where data originates", w:250,
+     cards:[
+       {id:"src_zoho", h:44},
+       {id:"src_sqlite", h:56},
+       {id:"src_lab", h:44},
+       {id:"src_iot", h:46},
+       {id:"src_llm", h:44}
+     ]},
+    {key:"ing", head:"2 · INGEST & ETL", color:C.cyan, note:"how it gets to Databricks", w:250,
+     cards:[
+       {id:"ing_sync", h:48},
+       {id:"ing_migrate", h:48},
+       {id:"ing_zoho", h:48},
+       {id:"ing_lab", h:44},
+       {id:"ing_loops", h:44}
+     ]},
+    {key:"bronze", head:"3 · BRONZE (raw)", color:C.orange, note:"catalog.bronze · Delta", w:300,
+     cards:[
+       {id:"c_sqlite_ops", t:"Operational mirror (from SQLite)", s:"families · enrollments · collection_kits", c:C.light, h:40},
+       {id:"c_cbu", t:"cord_blood_units", s:"from SQLite", c:C.light, h:36},
+       {id:"c_tanks", t:"storage_tanks · tank_temperature_logs", s:"SQLLite + simulated IoT loggers", c:C.light, h:38},
+       {id:"c_lab", t:"lab_test_reports", s:"from CSV/Excel + regeneration", c:C.light, h:36},
+       {id:"c_zoho", t:"zoho_contacts · zoho_enrollments · zoho_leads", s:"CRM mirror", c:C.orange, h:40},
+       {id:"c_ws", t:"sync_watermark · crm_sync_log", s:"control tables", c:C.dim, h:36}
+     ]},
+    {key:"silver", head:"4 · SILVER (cleansed)", color:C.green, note:"validated · conformed", w:280,
+     cards:[
+       {id:"c_sfv", t:"families (crm_id stitch)", s:"Zoho contacts merged", c:C.green, h:40},
+       {id:"c_scbu", t:"cord_blood_units", s:"cleansed", c:C.green, h:36},
+       {id:"c_sendo", t:"enrollments · transplant_records", s:"cleansed", c:C.green, h:36},
+       {id:"c_stank", t:"storage_tanks · tank_temperature_logs", s:"validated", c:C.green, h:38},
+       {id:"c_slab", t:"lab_test_reports", s:"conformed", c:C.green, h:36}
+     ]},
+    {key:"gold", head:"5 · GOLD (analytics)", color:C.blue, note:"catalog.gold · Genie-ready", w:260,
+     cards:[
+       {id:"c_gu", t:"unit_summary", s:"per-CBU analytic row", c:C.blue, h:38},
+       {id:"c_gf", t:"enrollment_funnel", s:"funnel KPIs", c:C.blue, h:36},
+       {id:"c_gk", t:"kpis", s:"platform KPIs", c:C.blue, h:36},
+       {id:"gold_gs", t:"v_unit_inventory (VIEW)", s:"unit_summary ⋈ lab tests", c:C.green, h:40}
+     ]},
+    {key:"cons", head:"6 · CONSUMERS", color:C.purple, note:"who reads the lakehouse", w:250,
+     cards:[
+       {id:"cons_genie", h:46},
+       {id:"cons_dash", h:44},
+       {id:"cons_conn", h:44}
+     ]}
+  ],
+  edges:[
+    {from:"src_sqlite", to:"ing_sync", kind:"int", label:"reads SQLite tables + sync_watermark"},
+    {from:"src_sqlite", to:"ing_migrate", kind:"int", label:"one-time full bulk"},
+    {from:"src_zoho", to:"ing_zoho", kind:"int", label:"OAuth2 · Modified_Time"},
+    {from:"src_lab", to:"ing_lab", kind:"int", label:"CSV/Excel/PDF"},
+    {from:"src_iot", to:"ing_sync", kind:"int", label:"loggers → readings → store"},
+    {from:"src_llm", to:"b_extract_anchor", kind:"ai", label:"called by backend (no writes)"},   /* b_extract_anchor = placeholder */
+    {from:"ing_sync", to:"bronze_X", kind:"sync", label:"MERGE INTO bronze · watermark"},
+    {from:"ing_migrate", to:"bronze_X", kind:"sync", label:"bulk upsert bronze"},
+    {from:"ing_zoho", to:"bronze_X", kind:"sync", label:"INSERT bronze.zoho_*"},
+    {from:"ing_lab", to:"bronze_X", kind:"sync", label:"INSERT bronze.lab_test_reports"},
+    {from:"ing_loops", to:"bronze_X", kind:"sync", label:"incidents → local → sync"},
+    {from:"bronze_X", to:"silver_X", kind:"transform", label:"job 02:00 UTC · build_silver_gold · Spark 15.4", w:2},
+    {from:"silver_X", to:"gold_X", kind:"transform", label:"CREATE TABLE gold.* · views · comments", w:2},
+    {from:"gold_X", to:"cons_genie", kind:"consume", label:"Genie SELECT over gold", w:2},
+    {from:"gold_X", to:"cons_dash", kind:"consume", label:"/api/dashboard · /api/pages/*"},
+    {from:"silver_X", to:"cons_conn", kind:"consume", label:"connector reads (databricks backend)"}
+  ]
+};
+
+function linHeight(){
+  var col=LIN.stages[0];
+  var y=120;  /* title + header */
+  var h=0;
+  LIN.stages.forEach(function(s){
+    s.cards.forEach(function(c){ h+=c.h+12; });
+  });
+  return 150 + 24 + 20 + h + 90;
+}
+function renderLineage(){
+  var defs=el("defs",{},svg);
+  el("marker",{id:"arrL",viewBox:"0 0 10 10",refX:8.5,refY:5,markerWidth:7,markerHeight:7,orient:"auto-start-reverse"},defs).innerHTML=
+    '<path d="M0,0 L10,5 L0,10 z" fill="#8fa3c0"/>';
+  el("marker",{id:"arrL2",viewBox:"0 0 10 10",refX:8.5,refY:5,markerWidth:8,markerHeight:8,orient:"auto-start-reverse"},defs).innerHTML=
+    '<path d="M0,0 L10,5 L0,10 z" fill="#00C853"/>';
+
+  var H=linHeight();
+  var topTitle=56;
+  el("text",{class:"stagetitle",x:M,y:topTitle,"fill":"#00A6D6"},svg).textContent="DATA LINEAGE — HOW DATA REACHES DATABRICKS";
+  var titleNote=el("text",{class:"bandnote",x:M,y:topTitle+22},svg);
+  titleNote.textContent="Source systems (left) → ingest/ETL → bronze → silver → gold (Unity Catalog cryosync_catalog) → consumers. Arrows annotated with the exact mechanism.";
+
+  /* stage columns */
+  var x0=M-20, y0=topTitle+56;
+  var spacing=34;
+  var cols={};
+  var lane=0;
+  LIN.stages.forEach(function(s){
+    var x=x0+lane;
+    var col=el("g",{class:"stagecol","data-layer":s.key},svg);
+    cols[s.key]=x;
+    el("text",{class:"sc-head",x:x,y:y0,"fill":s.color},col).textContent=s.head;
+    el("text",{class:"sc-note",x:x,y:y0+14},col).textContent=s.note;
+    var y=y0+30;
+    s.cards.forEach(function(c){
+      var d=c.id? (D[c.id]||{t:c.t||c.id,s:c.s||"",c:c.c||C.cyan}) : {t:c.t,s:c.s,c:c.c||C.cyan};
+      var colG=c.c||s.color;
+      var g=el("g",{class:"sc","transform":"translate("+x+" "+y+")","data-id":c.id,"tabindex":"0"},col);
+      var gkey=c.id||c.t;
+      g.addEventListener("click",function(){ selectD(d, gkey, c.id); });
+      g.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){e.preventDefault(); selectD(d, gkey, c.id);} });
+      el("rect",{class:"sc-card",width:s.w,height:c.h,stroke:colG},g);
+      el("rect",{width:s.w,height:3,fill:colG,rx:2},g);
+      var t=el("text",{class:"sc-title",x:10,y:Math.min(18,c.h-16)},g); t.textContent=d.t;
+      if(d.s){ var ss=el("text",{class:"sc-sub",x:10,y:c.h-8},g); ss.textContent=d.s; }
+      var ttl=el("title",{},g); ttl.textContent=d.t+" — "+(d.s||"");
+      NODES[c.id]={cx:x+s.w/2, cy:y+c.h/2, w:s.w, h:c.h, yTop:y, yBot:y+c.h, band:s.key};
+      y+=c.h+12;
+    });
+    lane += s.w+spacing;
+    NODES[s.key+"_X"]={cx:x+s.w/2, cy:y0, w:s.w, h:0};
+  });
+
+  /* connector from LLM to backend (rendered as a node in src column as end-cap) */
+  /* edges */
+  var eg=el("g",{id:"ledge"},svg);
+  LIN.edges.forEach(function(e){
+    var src=NODES[e.from], dst=NODES[e.to];
+    if(!dst && e.to==="b_extract_anchor"){
+      /* end at bottom-left of src_llm card downward small stub */
+      dst={cx:src.cx, cy:src.yBot+34, yTop:src.yBot, w:0,h:0};
+    }
+    if(!src||!dst) return;
+    var colFor=e.kind==="int"?C.light:e.kind==="sync"?C.green:e.kind==="transform"?C.green:e.kind==="consume"?C.cyan:C.purple;
+    var colG=colFor;
+    /* arrows between stage columns are left->right */
+    var p, dx=8, dxx=18;
+    if(e.to==="b_extract_anchor"){
+      p="M "+(src.cx-6)+" "+(src.yBot+16)+" L "+src.cx+" "+(src.yBot+40);
+    } else {
+      var ySrc=src.cy, yDst=dst.cy;
+      var x2=dst.cx-dst.w/2-6;
+      var x1=src.cx+src.w/2+6;
+      p="M "+x1+" "+ySrc+" C "+(x1+20)+" "+ySrc+", "+(x2-20)+" "+yDst+", "+x2+" "+yDst;
+    }
+    var edge=el("path",{class:"edge"+(e.w===2?"":" thin"),d:p,stroke:colG,"marker-end":"url(#arrL2)"},eg);
+    edge.addEventListener("click",function(){ selectEdgeData(e); });
+    var ttl=el("title",{},edge); ttl.textContent=e.label;
+    /* label */
+    var midX=p? ((e.to==="b_extract_anchor")?src.cx:(src.cx+src.w/2+dxx+dst.cx-dst.w/2-6)/2) : src.cx;
+    var midY=(src.cy+dst.cy)/2;
+    if(e.to==="b_extract_anchor") midY=(src.yBot+dst.yBot)/2+8;
+    var lg=el("g",{class:"elabel small","transform":"translate("+midX+" "+midY+")"},eg);
+    var tw=Math.min(250, e.label.length*4.6+20);
+    el("rect",{x:-tw/2,y:-8,width:tw,height:16},lg);
+    var lx=el("text",{x:-tw/2+10,y:-1},lg); lx.textContent=e.label;
+  });
+}
+
+/* lineage ends with a note row at bottom */
+function linFooter(){
+  var H=linHeight();
+  var y=H-46;
+  var leg=el("g",{id:"legfoot"},svg);
+  el("rect",{class:"leg",x:M-20,y:y,w:BAND_W+20,h:34,fill:"#0F1B31",stroke:"#2A3A5C",rx:10},leg);
+  var items=[
+    ["Ingest/ETL scripts",C.green],["Transform job",C.green],["HTTP / API",C.cyan],["AI / LLM",C.purple],["Read (consume)",C.cyan],["DB write (merge)",C.orange]
+  ];
+  items.forEach(function(it,i){
+    var x=M+24+i*190;
+    var dot=el("circle",{cx:x,cy:y+17,r:5,fill:it[1]},leg);
+    el("text",{x:x+10,y:y+21,"font-size":10,fill:"#B0C4DE"},leg).textContent=it[0];
+  });
+}
+
+/* ============================================================
+   VIEW SWITCH / RENDER
+============================================================ */
+function clearCanvas(){
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  NODES={};
+}
+function switchView(v){
+  view=v;
+  var bSys=document.getElementById("tabSystem"), bLin=document.getElementById("tabLineage");
+  bSys.classList.toggle("on", v==="system");
+  bLin.classList.toggle("on", v==="lineage");
+  document.getElementById("hdrTitle").innerHTML = v==="system"
+    ? "<b>Cold-Chain Intelligence Platform</b> — system &amp; transaction flows"
+    : "<b>Cold-Chain Intelligence Platform</b> — data lineage → Databricks";
+  document.getElementById("panel").classList.add("closed");
+  clearCanvas();
+  if(v==="system") renderSystem(); else { renderLineage(); linFooter(); }
+  H=renderH();
+  fit();
+}
+function renderH(){
+  return view==="system"? sysTotalHeight() : linHeight();
+}
+
+/* ============================================================
+   INTERACTIONS
+============================================================ */
+var selected=null;
+function selectD(d, key, dataId){
+  selected=key;
+  var prev=svg.querySelector(".sc.selected"); if(prev) prev.classList.remove("sc.selected");
+  var box=svg.querySelector('.sc[data-id="'+dataId+'"]');
+  if(box) box.classList.add("selected");
+  fillPanel(d, key);
+}
+function select(id){
+  var d=D[id];
+  if(!d){ d={t:id,s:"",c:C.cyan,it:["Open the node detail (data not found for "+id+")."]}; }
+  selected=id;
+  var prev=svg.querySelector(".selected"); if(prev) prev.classList.remove("selected");
+  var box=svg.querySelector('[data-id="'+id+'"]')||svg.querySelector('.sc[data-id="'+id+'"]');
+  if(box) box.classList.add("selected");
+  fillPanel(d, id);
+}
+function selectEdge(id){
+  var e=null; SYS_EDGES.forEach(function(x){ if(x.id===id) e=x; });
+  if(!e) return;
+  var prev=svg.querySelector(".edge.selected"); if(prev) prev.classList.remove("edge.selected");
+  var ed=svg.getElementById("e-"+id); if(ed) ed.classList.add("edge.selected");
+  var d={t:"Flow: "+e.from+" → "+e.to, s:e.label, c:EDGE_C[e.kind], it:[
+    ["Transaction",e.label],
+    ["Kind", e.kind==="http"?"HTTP REST":e.kind==="db"?"Database (SQL connector)":e.kind==="ai"?"AI / LLM":e.kind==="sync"?"Sync / ETL script":e.kind==="deploy"?"CI/CD":e.kind],
+    ["From", D[e.from]?D[e.from].t:e.from],
+    ["To", D[e.to]?D[e.to].t:e.to],
+    [e.w===2?"priority":"note", e.w===2?"Primary data path":"Secondary / supporting path"]
+  ]};
+  fillPanel(d, id);
+}
+function selectEdgeData(e){
+  var prev=svg.querySelector(".edge.selected"); if(prev) prev.classList.remove("edge.selected");
+  var d={t:"Lineage: "+e.from+" → "+e.to, s:e.label, c:EDGE_C[e.kind]||C.cyan, it:[
+    ["Mechanism",e.label],
+    ["Kind", e.kind],
+    ["From", e.from],
+    ["To", e.to]
+  ]};
+  fillPanel(d, "lin-"+e.label);
+}
+function fillPanel(d, key){
+  var h=document.getElementById("panelBody"), em=document.getElementById("panelEmpty");
+  em.style.display="none"; h.style.display="block"; h.innerHTML="";
+  var head=document.createElement("div"); head.className="phead";
+  head.innerHTML=
+    '<div class="picon" style="background:'+darken(d.c,0.8)+';border:1px solid '+d.c+'">'+
+      '<div style="width:13px;height:13px;border-radius:4px;background:'+d.c+'"></div></div>'+
+    '<div><div class="ptitle">'+d.t+'</div><div class="psub">'+(d.s||"")+'</div></div>';
+  h.appendChild(head);
+  var ul=document.createElement("ul");
+  (d.it||[]).forEach(function(item){
+    var li=document.createElement("li");
+    if(Array.isArray(item)){
+      var b=document.createElement("b"); b.textContent=item[0];
+      li.appendChild(b);
+      if(String(item[1]).indexOf("/api/")>=0||/\.py/.test(item[1])){
+        var cd=document.createElement("code"); cd.textContent=item[1]; li.appendChild(cd);
+      } else li.appendChild(document.createTextNode(item[1]));
+    } else li.textContent=item;
+    ul.appendChild(li);
+  });
+  h.appendChild(ul);
+  document.getElementById("panel").classList.remove("closed");
+}
+
+/* focus stage/layer on column header click */
+document.getElementById("canvas").addEventListener("click", function(ev){
+  var t=ev.target;
+  if(t&&t.classList&&t.classList.contains("sc-head")){
+    var col=t.parentNode; toggleFocus(col.getAttribute("data-layer"), col);
+  }
+  if(t&&t.classList&&t.classList.contains("bandtitle")){
+    var bg=t.parentNode; toggleFocus(bg.getAttribute("data-layer"), bg);
+  }
+});
+function toggleFocus(key, ref){
+  var scope = ref.classList.contains("stagecol")?"stagecol":"band";
+  var cv=document.getElementById("canvas");
+  var sel=cv.querySelectorAll(scope==="band"?".band.active":".stagecol.active");
+  var curOn=(sel.length===1);
+  cv.classList.remove("focusLayer");
+  (scope==="band"?cv.querySelectorAll(".band"):cv.querySelectorAll(".stagecol")).forEach(function(x){ x.classList.remove("active"); });
+  if(!curOn||sel[0]!==ref){ ref.classList.add("active"); cv.classList.add("focusLayer"); }
+}
+
+/* ---- zoom / pan ---- */
+function getVB(){ return svg.viewBox.baseVal; }
+function zoom(f){
+  var v=getVB(); var k=Math.max(0.15,Math.min(6,1/f));
+  var cx=v.x+v.width/2, cy=v.y+v.height/2;
+  var cw=svg.clientWidth||1, ch=svg.clientHeight||1;
+  v.width*=k; v.height=v.width*ch/Math.max(1,cw);
+  v.x=cx-v.width/2; v.y=cy-v.height/2;
+}
+function fit(){
+  var v=getVB();
+  var cw=svg.clientWidth||1, ch=svg.clientHeight||1;
+  v.x=0; v.y=0; v.width=W; v.height=H;
+  svg.style.width=cw+"px"; svg.style.height=ch+"px";
+}
+svg.addEventListener("wheel", function(e){
+  e.preventDefault();
+  var v=getVB();
+  var rect=svg.getBoundingClientRect();
+  var px=(e.clientX-rect.left), py=(e.clientY-rect.top);
+  var k=v.width/svg.clientWidth;
+  var ux=v.x+px*k, uy=v.y+py*k;
+  var f=e.deltaY<0?0.82:1.18;
+  var nw=v.width*f, nh=v.height*f;
+  v.x=ux-(ux-v.x)*(nw/v.width); v.y=uy-(uy-v.y)*(nh/v.height);
+  v.width=nw; v.height=nh;
+},{passive:false});
+
+var drag=null;
+svg.addEventListener("pointerdown", function(e){
+  if(e.target.closest&&e.target.closest(".box,.sc,.edge")) return;
+  drag={x:e.clientX,y:e.clientY,vx:getVB().x,vy:getVB().y};
+  svg.classList.add("dragging"); svg.setPointerCapture(e.pointerId);
+});
+svg.addEventListener("pointermove", function(e){
+  if(!drag) return;
+  var v=getVB(), k=v.width/svg.clientWidth;
+  v.x=drag.vx-(e.clientX-drag.x)*k; v.y=drag.vy-(e.clientY-drag.y)*k;
+});
+svg.addEventListener("pointerup", function(){ drag=null; svg.classList.remove("dragging"); });
+svg.addEventListener("pointercancel", function(){ drag=null; svg.classList.remove("dragging"); });
+
+document.addEventListener("keydown", function(e){
+  if(e.key==="Escape") document.getElementById("panel").classList.add("closed");
+});
+
+/* ============================================================
+   INIT
+============================================================ */
+switchView("system");
+</script>
+</body>
+</html>
