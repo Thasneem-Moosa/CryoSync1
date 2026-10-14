@@ -20,6 +20,7 @@ const LabReportsPage = lazy(() => import('@/pages/LabReports/LabReportsPage'))
 const LabReportDetailPage = lazy(() => import('@/pages/LabReports/LabReportDetailPage'))
 const AdminPage = lazy(() => import('@/pages/Admin/AdminPage'))
 const ReceivingPage = lazy(() => import('@/pages/Receiving/ReceivingPage'))
+const LoginPage = lazy(() => import('@/pages/Login/LoginPage'))
 
 
 function PageLoader() {
@@ -109,6 +110,10 @@ export const routes: RouteObject[] = [
   {
     path: '/receiving',
     element: <RequireAuth>{withPage(ReceivingPage)}</RequireAuth>,
+  },
+  {
+    path: '/login',
+    element: withPage(LoginPage),
   },
   {
     path: '*',

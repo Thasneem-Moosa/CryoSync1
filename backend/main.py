@@ -72,6 +72,38 @@ def _is_public(path: str) -> bool:
     return True
 
 
+# --- Login bypass ---------------------------------------------------------
+# CryoSync normally uses its own username/password sessions, but it also runs
+# behind the Databricks Apps proxy, which authenticates the user before the
+# request reaches us. While the app relies on Databricks auth alone, we skip the
+# CryoSync session requirement entirely and treat every caller as a full-access
+# administrator. The Databricks-injected identity headers are used to reflect the
+# real signed-in user when present.
+_BYPASS_USER = {
+    "id": "dev-admin",
+    "username": "admin",
+    "email": "admin@databricks.local",
+    "displayName": "Administrator",
+    "title": "Administrator",
+    "role": "admin",
+}
+
+
+def _bypass_user(request: Optional[Request] = None) -> dict:
+    user = dict(_BYPASS_USER)
+    if request is not None:
+        email = (
+            request.headers.get("x-forwarded-email")
+            or request.headers.get("x-forwarded-user")
+            or ""
+        ).strip()
+        if "@" in email:
+            user["email"] = email
+            user["username"] = email.split("@")[0]
+            user["displayName"] = email
+    return user
+
+
 async def _current_user(request: Request) -> Optional[dict]:
     """Resolve the signed-in user from the session token.
 
@@ -2074,9 +2106,15 @@ async def _genie_user(request: Request):
         authz = request.headers.get("authorization", "")
         if authz.lower().startswith("bearer "):
             token = authz[7:].strip()
-    if not token:
-        return None
-    return await get_user_by_token(token)
+    if token:
+        try:
+            resolved = await get_user_by_token(token)
+        except Exception:
+            resolved = None
+        if resolved:
+            return resolved
+    # No CryoSync session needed while the app relies on Databricks auth.
+    return _bypass_user(request)
 
 @app.get("/api/genie/conversations")
 async def get_conversations(request: Request):
@@ -2181,12 +2219,20 @@ async def login(body: LoginBody):
     return {"token": token, "user": public_user(user)}
 
 @app.get("/api/auth/me")
-async def me(token: str = Query("")):
-    """Resolve a session token to the signed-in user."""
-    user = await get_user_by_token(token)
-    if not user:
-        raise HTTPException(401, "Invalid or expired session")
-    return {"user": public_user(user)}
+async def me(request: Request, token: str = Query("")):
+    """Resolve a session token to the signed-in user.
+
+    Falls back to the Databricks-authenticated (or default) user while the app
+    bypasses its own login.
+    """
+    if token:
+        try:
+            user = await get_user_by_token(token)
+        except Exception:
+            user = None
+        if user:
+            return {"user": public_user(user)}
+    return {"user": public_user(_bypass_user(request))}
 
 @app.post("/api/auth/logout")
 async def logout(body: dict):

@@ -86,3 +86,5 @@ import { BrandMark } from '@/components/brand/BrandMark'
 function LoginPage() {
   return <Navigate to="/" replace />
 }
+
+export default LoginPage
