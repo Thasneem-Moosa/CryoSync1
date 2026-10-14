@@ -40,19 +40,19 @@ env:
   - name: CRYOSYNC_DB_BACKEND
     value: databricks
   - name: DATABRICKS_HTTP_PATH
-    value: /sql/1.0/warehouses/21c1e9ba9ca28076
+    value: /sql/1.0/warehouses/673ea65a10df3d0f
   - name: DATABRICKS_CATALOG
     value: cryosync_catalog
   - name: DATABRICKS_BRONZE_SCHEMA
     value: bronze
   - name: OPENAI_BASE_URL
-    value: https://dbc-cbb34da0-57d2.cloud.databricks.com/serving-endpoints/databricks-meta-llama-3-3-70b-instruct/invocations
+    value: https://dbc-2a25661e-3f93.cloud.databricks.com/serving-endpoints/databricks-meta-llama-3-3-70b-instruct/invocations
   - name: OPENAI_MODEL
     value: databricks-meta-llama-3-3-70b-instruct
   - name: OPENAI_VISION_MODEL
     value: databricks-llama-4-maverick
   - name: OPENAI_VISION_BASE_URL
-    value: https://dbc-cbb34da0-57d2.cloud.databricks.com/serving-endpoints/databricks-llama-4-maverick/invocations
+    value: https://dbc-2a25661e-3f93.cloud.databricks.com/serving-endpoints/databricks-llama-4-maverick/invocations
   - name: GENIE_SPACE_ID
     value: "01f1a85b27c212f585967a8e60077bc3"
   - name: ZOHO_REGION
