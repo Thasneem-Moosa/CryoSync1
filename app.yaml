@@ -54,7 +54,7 @@ env:
   - name: OPENAI_VISION_BASE_URL
     value: https://dbc-2a25661e-3f93.cloud.databricks.com/serving-endpoints/databricks-llama-4-maverick/invocations
   - name: GENIE_SPACE_ID
-    value: "01f1a85b27c212f585967a8e60077bc3"
+    value: "01f1c7a34c11179f801b2a63f173a229"
   - name: ZOHO_REGION
     value: in
   - name: ZOHO_API_URL
