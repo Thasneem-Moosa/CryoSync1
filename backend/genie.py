@@ -22,7 +22,20 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-HOST = os.getenv("DATABRICKS_HOST", "").rstrip("/")
+def _normalize_host(value: str) -> str:
+    """Return a fully-qualified https origin.
+
+    DATABRICKS_HOST may be injected by the Databricks Apps runtime without a
+    scheme (e.g. ``dbc-xxxx.cloud.databricks.com``), which httpx rejects with
+    "Request URL is missing an 'http://' or 'https://' protocol".
+    """
+    host = (value or "").strip().rstrip("/")
+    if host and not host.startswith(("http://", "https://")):
+        host = "https://" + host
+    return host
+
+
+HOST = _normalize_host(os.getenv("DATABRICKS_HOST", ""))
 TOKEN = os.getenv("DATABRICKS_TOKEN", "")
 SPACE_ID = os.getenv("GENIE_SPACE_ID", "")
 
