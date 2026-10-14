@@ -20,7 +20,7 @@ const LabReportsPage = lazy(() => import('@/pages/LabReports/LabReportsPage'))
 const LabReportDetailPage = lazy(() => import('@/pages/LabReports/LabReportDetailPage'))
 const AdminPage = lazy(() => import('@/pages/Admin/AdminPage'))
 const ReceivingPage = lazy(() => import('@/pages/Receiving/ReceivingPage'))
-const LoginPage = lazy(() => import('@/pages/Login/LoginPage'))
+
 
 function PageLoader() {
   return (
@@ -41,14 +41,7 @@ function withPage(Page: React.ComponentType) {
 }
 
 export const routes: RouteObject[] = [
-  {
-    path: '/login',
-    element: (
-      <Suspense fallback={<PageLoader />}>
-        <LoginPage />
-      </Suspense>
-    ),
-  },
+
   {
     path: '/',
     element: <RequireAuth>{withPage(DashboardPage)}</RequireAuth>,

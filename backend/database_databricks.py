@@ -253,6 +253,40 @@ def _convert_param(value: Any) -> Any:
     return value
 
 
+# A Databricks SQL session can be closed server-side (warehouse restart, idle
+# timeout, etc.) while the local connection object still looks open. When that
+# happens every query fails with an "Invalid SessionHandle" style error until a
+# brand new connection is opened, so we detect those and transparently retry on
+# a fresh session instead of surfacing a 500.
+_CONN_ERROR_HINTS = (
+    "invalid sessionhandle",
+    "session is closed",
+    "session is not open",
+    "session already closed",
+    "cannot create cursor from closed connection",
+    "connection is closed",
+    "connection is already closed",
+    "connection reset",
+    "server disconnected",
+)
+
+
+def _is_conn_error(exc: Exception) -> bool:
+    try:
+        from databricks.sql.exc import (
+            InterfaceError,
+            NonRecoverableNetworkError,
+            SessionAlreadyClosedError,
+        )
+
+        if isinstance(exc, (SessionAlreadyClosedError, InterfaceError, NonRecoverableNetworkError)):
+            return True
+    except Exception:
+        pass
+    msg = str(exc).lower()
+    return any(hint in msg for hint in _CONN_ERROR_HINTS)
+
+
 # ---------------------------------------------------------------------------
 # Record (compatible row object)
 # ---------------------------------------------------------------------------
@@ -358,7 +392,15 @@ class DatabricksConnection:
                 self._conn().commit()
                 return None, None
 
-        rows, cols = await asyncio.to_thread(_exec)
+        try:
+            rows, cols = await asyncio.to_thread(_exec)
+        except Exception as exc:
+            # Session closed server-side: open a fresh connection and retry once
+            # so a stale session does not take the whole API down.
+            if not _is_conn_error(exc):
+                raise
+            await asyncio.to_thread(self._db.reconnect)
+            rows, cols = await asyncio.to_thread(_exec)
         if fetch and cols is not None:
             return [Record(cols, tuple(r)) for r in (rows or [])]
         return "OK"
@@ -441,6 +483,11 @@ class DatabricksConnection:
 
 class DatabricksPool:
     def __init__(self):
+        self._lock = threading.Lock()
+        self._sql_conn = None
+        self._connect()
+
+    def _connect(self):
         import databricks.sql as dbsql
         self._sql_conn = dbsql.connect(
             server_hostname=_HOST,
@@ -451,16 +498,32 @@ class DatabricksPool:
         )
 
     def _conn(self):
+        if self._sql_conn is None:
+            self._connect()
         return self._sql_conn
+
+    def reconnect(self):
+        """Drop the current connection (whose server-side session may be closed)
+        and open a fresh one. Serialised so concurrent failures share one reconnect."""
+        with self._lock:
+            try:
+                if self._sql_conn is not None:
+                    self._sql_conn.close()
+            except Exception:
+                pass
+            self._sql_conn = None
+            self._connect()
 
     def acquire(self):
         return _PoolAcquire(self)
 
     async def close(self):
         try:
-            self._sql_conn.close()
+            if self._sql_conn is not None:
+                self._sql_conn.close()
         except Exception:
             pass
+        self._sql_conn = None
 
 
 class _PoolAcquire:
@@ -525,24 +588,42 @@ async def _ensure_schema(pool: DatabricksPool):
     pool._conn().commit()
 
 
+async def _with_retry(pool: DatabricksPool, fn):
+    """Run a blocking cursor operation, reconnecting once if the session died."""
+    try:
+        return await asyncio.to_thread(fn)
+    except Exception as exc:
+        if not _is_conn_error(exc):
+            raise
+        await asyncio.to_thread(pool.reconnect)
+        return await asyncio.to_thread(fn)
+
+
 # Discovery helpers (used by Admin/table-browser endpoints)
 async def discover_tables() -> List[dict]:
     pool = await get_pool()
     sch = (_SCHEMA or "").strip() or "current"
-    with pool._conn().cursor() as cur:
-        if sch and sch.lower() not in ("public", "default", "main"):
-            cur.execute(f"SHOW TABLES IN `{_CATALOG}`.`{sch}`")
-        else:
-            cur.execute("SHOW TABLES")
-        rows = cur.fetchall()
-        names = [r[0] if isinstance(r[0], str) else r[0] for r in rows]
-        names = [n.split(".")[-1] for n in names if n]
+
+    def _list_names():
+        with pool._conn().cursor() as cur:
+            if sch and sch.lower() not in ("public", "default", "main"):
+                cur.execute(f"SHOW TABLES IN `{_CATALOG}`.`{sch}`")
+            else:
+                cur.execute("SHOW TABLES")
+            rows = cur.fetchall()
+            names = [r[0] if isinstance(r[0], str) else r[0] for r in rows]
+            return [n.split(".")[-1] for n in names if n]
+
+    names = await _with_retry(pool, _list_names)
     result = []
     for name in names:
-        try:
+        def _count(table=name):
             with pool._conn().cursor() as cur:
-                cur.execute(f"SELECT COUNT(*) FROM `{_CATALOG}`.`{sch}`.`{name}`")
-                cnt = cur.fetchone()[0]
+                cur.execute(f"SELECT COUNT(*) FROM `{_CATALOG}`.`{sch}`.`{table}`")
+                return cur.fetchone()[0]
+
+        try:
+            cnt = await _with_retry(pool, _count)
         except Exception:
             cnt = 0
         result.append({
@@ -558,12 +639,16 @@ async def get_table_preview(table_id: str) -> dict:
     pool = await get_pool()
     sch = (_SCHEMA or "").strip()
     qtable = f"`{_CATALOG}`.`{sch}`.`{table_id}`" if sch and sch.lower() not in ("public", "default", "main") else f"`{table_id}`"
-    with pool._conn().cursor() as cur:
-        cur.execute(f"DESCRIBE TABLE {qtable}")
-        desc = cur.fetchall()
-        cols = [r[0] for r in desc if r[0] not in ("# col_name",)]
-        cur.execute(f"SELECT * FROM {qtable} LIMIT 10")
-        data_rows = cur.fetchall()
-        cur.execute(f"SELECT COUNT(*) FROM {qtable}")
-        total = cur.fetchone()[0]
-    return {"columns": cols, "rows": [dict(zip(cols, r)) for r in data_rows], "totalRows": total}
+
+    def _preview():
+        with pool._conn().cursor() as cur:
+            cur.execute(f"DESCRIBE TABLE {qtable}")
+            desc = cur.fetchall()
+            cols = [r[0] for r in desc if r[0] not in ("# col_name",)]
+            cur.execute(f"SELECT * FROM {qtable} LIMIT 10")
+            data_rows = cur.fetchall()
+            cur.execute(f"SELECT COUNT(*) FROM {qtable}")
+            total = cur.fetchone()[0]
+        return {"columns": cols, "rows": [dict(zip(cols, r)) for r in data_rows], "totalRows": total}
+
+    return await _with_retry(pool, _preview)

@@ -10,13 +10,21 @@ function RequireAuth({ children }: { children: ReactNode }) {
   const user = useAuthStore((s) => s.user)
   const location = useLocation()
 
-  if (!user) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  // Bypass login for development
+  const bypassUser = {
+    id: 'dev-admin',
+    username: 'admin',
+    email: 'admin@dev.local',
+    displayName: 'Administrator',
+    title: 'Dev Admin',
+    role: 'admin' as const
   }
+
+  const currentUser = user || bypassUser
 
   return (
     <MainLayout>
-      {canAccessPage(user.role, location.pathname) ? children : <AccessDenied />}
+      {canAccessPage(currentUser.role, location.pathname) ? children : <AccessDenied />}
     </MainLayout>
   )
 }

@@ -17,8 +17,15 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      token: null,
-      user: null,
+      token: 'dev-token',
+      user: {
+        id: 'dev-admin',
+        username: 'admin',
+        email: 'admin@dev.local',
+        displayName: 'Administrator',
+        title: 'Dev Admin',
+        role: 'admin' as const
+      },
       setSession: (token, user) => set({ token, user }),
       clearSession: () => set({ token: null, user: null }),
     }),
@@ -26,17 +33,7 @@ export const useAuthStore = create<AuthState>()(
       name: AUTH_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       merge: (persisted, current) => {
-        const state = (persisted ?? {}) as Partial<AuthState>
-        const user =
-          state.user && typeof state.user.displayName === "string" && VALID_ROLES.has(state.user.role)
-            ? state.user
-            : null
-        return {
-          ...current,
-          ...state,
-          user,
-          token: user ? (state.token ?? null) : null,
-        }
+        return current
       },
     },
   ),

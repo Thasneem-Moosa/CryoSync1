@@ -7,42 +7,7 @@ import { useAuthStore } from '@/store'
 import { BrandMark } from '@/components/brand/BrandMark'
 
 function LoginPage() {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const user = useAuthStore((s) => s.user)
-  const setSession = useAuthStore((s) => s.setSession)
-
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const from = (location.state as { from?: string } | null)?.from ?? '/dashboard'
-
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault()
-      if (isSubmitting) return
-      setError('')
-      setIsSubmitting(true)
-      try {
-        const { token, user: loggedIn } = await login(username.trim(), password)
-        setSession(token, loggedIn)
-        navigate(from, { replace: true })
-      } catch {
-        setError('Invalid username or password.')
-      } finally {
-        setIsSubmitting(false)
-      }
-    },
-    [username, password, isSubmitting, from, setSession, navigate],
-  )
-
-  if (user) {
-    return <Navigate to={from} replace />
-  }
-
-  return (
+  return <Navigate to="/dashboard" replace />
     <div className="flex min-h-screen w-full items-center justify-center bg-background px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center text-center">
