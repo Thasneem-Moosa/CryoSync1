@@ -30,4 +30,17 @@ If you are developing a production application, we recommend enabling type-aware
 ```
 
 See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
-"# CryoSyncFront" 
+"# CryoSyncFront"
+
+## Background job intervals
+
+Both background jobs run once per day by default. To change them:
+
+| Job | Setting | Where to change |
+| --- | --- | --- |
+| AI temperature-incident scan | `AI_SCAN_INTERVAL_MINUTES` (default `1440`) | `app.yaml` (Databricks Apps) or `backend/.env` / `backend/.env.example` (local). Code default: `backend/main.py` → `_scan_interval_seconds()`. |
+| Zoho CRM → Databricks sync | `ZOHO_SYNC_INTERVAL_MINUTES` (default `1440`) | `app.yaml` (Databricks Apps) or `backend/.env` / `backend/.env.example` (local). Code default: `backend/main.py` → `_zoho_sync_interval_seconds()`. |
+
+Values are in minutes; `0` disables a background loop. Restart the app after changing an interval (values are read once at startup).
+
+Zoho CRM can also be synced on demand from **Admin → Sync Zoho CRM** (calls `POST /api/admin/sync-zoho`). It requires `CRYOSYNC_DB_BACKEND=databricks` plus the Zoho credentials.

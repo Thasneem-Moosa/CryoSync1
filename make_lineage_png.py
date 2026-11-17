@@ -85,7 +85,7 @@ sources = [
     (TEAL, "Zoho CRM v7", ["OAuth2 refresh, incremental by", "Modified_Time -> bronze.zoho_*"]),
     (TEAL, "SQLite app DB", ["migrate (full) + sync (watermark)", "UPDATE_TRACKED vs APPEND_ONLY"]),
     (TEAL, "Lab report uploads", ["/api/lab-reports/upload -> CSV/", "batch import -> bronze tables"]),
-    (TEAL, "Background loops", ["temp scanner (1 min) + CRM sync", "(60 min) feed bronze"]),
+    (TEAL, "Background loops", ["temp scanner (1 day) + CRM sync", "(1 day) feed bronze"]),
 ]
 sy = 1040
 for seed, title, lines in sources:

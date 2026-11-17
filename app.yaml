@@ -61,3 +61,9 @@ env:
     value: https://www.zohoapis.in/crm/v7
   - name: ZOHO_ACCOUNTS_URL
     value: https://accounts.zoho.in
+  # Background job cadence, in minutes (1440 = 1 day). Change here for
+  # Databricks Apps, or in backend/.env for local runs. Restart to apply.
+  - name: AI_SCAN_INTERVAL_MINUTES
+    value: "1440"
+  - name: ZOHO_SYNC_INTERVAL_MINUTES
+    value: "1440"

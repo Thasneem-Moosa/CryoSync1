@@ -7,6 +7,8 @@ import {
   RefreshCw,
   AlertTriangle,
   CheckCircle,
+  CloudUpload,
+  Loader2,
 } from "lucide-react"
 
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -15,6 +17,7 @@ import { PageHeader } from "@/components/common/PageHeader"
 import { ErrorState } from "@/components/common/ErrorState"
 import { LoadingState } from "@/components/common/LoadingState"
 import { useSystemHealth } from "@/services/system-service"
+import { syncZohoCrm } from "@/services/zoho-service"
 import { formatDateTime } from "@/utils/formatters"
 import { cn } from "@/lib/utils"
 
@@ -31,6 +34,8 @@ const tabs = [
 
 function AdminPage() {
   const [activeTab, setActiveTab] = useState("health")
+  const [syncingZoho, setSyncingZoho] = useState(false)
+  const [zohoMessage, setZohoMessage] = useState<{ text: string; isError: boolean } | null>(null)
   const { data, isLoading, isError, refetch, isFetching } = useSystemHealth()
 
   const overall = data?.overall ?? "healthy"
@@ -45,6 +50,27 @@ function AdminPage() {
 
   const handleRefresh = useCallback(() => {
     refetch()
+  }, [refetch])
+
+  const handleSyncZoho = useCallback(async () => {
+    setSyncingZoho(true)
+    setZohoMessage(null)
+    try {
+      const result = await syncZohoCrm()
+      const failed = result.failed?.length ?? 0
+      setZohoMessage({
+        text: `Zoho CRM sync complete: ${result.records} records across ${result.modules} module${result.modules === 1 ? "" : "s"}${failed > 0 ? ` (${failed} failed)` : ""}.`,
+        isError: false,
+      })
+      refetch()
+    } catch (err) {
+      setZohoMessage({
+        text: err instanceof Error ? err.message : "Zoho CRM sync failed. Please try again.",
+        isError: true,
+      })
+    } finally {
+      setSyncingZoho(false)
+    }
   }, [refetch])
 
   const pageActions = (
@@ -70,6 +96,20 @@ function AdminPage() {
         <RefreshCw className={cn("size-3.5", isFetching && "animate-spin")} />
         {isFetching ? "Refreshing..." : "Refresh"}
       </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleSyncZoho}
+        disabled={syncingZoho}
+        className="gap-1.5"
+      >
+        {syncingZoho ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <CloudUpload className="size-3.5" />
+        )}
+        {syncingZoho ? "Syncing..." : "Sync Zoho CRM"}
+      </Button>
     </div>
   )
 
@@ -80,6 +120,19 @@ function AdminPage() {
         description="Monitor platform services, view logs, and manage configuration"
         actions={pageActions}
       />
+
+      {zohoMessage && (
+        <div
+          className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm ${
+            zohoMessage.isError
+              ? "border-danger/40 bg-danger/10 text-danger"
+              : "border-success/40 bg-success/10 text-success"
+          }`}
+        >
+          <CloudUpload className="size-4 shrink-0" />
+          <span>{zohoMessage.text}</span>
+        </div>
+      )}
 
       {isLoading ? (
         <LoadingState variant="skeleton" />

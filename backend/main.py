@@ -1412,13 +1412,14 @@ async def scan_for_temperature_incidents(facility_id: str = None, reported_by: s
     return {"summary": summary, "createdIncidents": created}
 
 # Automatic background detection. Interval is configurable via the
-# AI_SCAN_INTERVAL_MINUTES env var (default 1). Set to 0 to disable the
-# background scanner entirely.
+# AI_SCAN_INTERVAL_MINUTES env var (default 1440 = 1 day). Set to 0 to disable
+# the background scanner entirely. Change the default here or override the
+# env var in backend/.env (local) or app.yaml (Databricks Apps).
 def _scan_interval_seconds() -> int:
     try:
-        minutes = float(os.getenv("AI_SCAN_INTERVAL_MINUTES", "1") or 0)
+        minutes = float(os.getenv("AI_SCAN_INTERVAL_MINUTES", "1440") or 0)
     except (TypeError, ValueError):
-        minutes = 1
+        minutes = 1440
     return max(0, int(minutes * 60))
 
 async def background_temp_incident_scanner():
@@ -1449,12 +1450,13 @@ async def background_temp_incident_scanner():
 
 
 # Zoho CRM -> Databricks automatic sync. Interval via ZOHO_SYNC_INTERVAL_MINUTES
-# (default 60). Set to 0 to disable the background loop (manual trigger remains).
+# (default 1440 = 1 day). Set to 0 to disable the background loop (the manual
+# trigger POST /api/admin/sync-zoho remains available).
 def _zoho_sync_interval_seconds() -> int:
     try:
-        minutes = float(os.getenv("ZOHO_SYNC_INTERVAL_MINUTES", "60") or 0)
+        minutes = float(os.getenv("ZOHO_SYNC_INTERVAL_MINUTES", "1440") or 0)
     except (TypeError, ValueError):
-        minutes = 60
+        minutes = 1440
     return max(0, int(minutes * 60))
 
 

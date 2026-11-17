@@ -77,6 +77,9 @@ export {
 } from './system-service'
 export type { SystemLogsParams } from './system-service'
 
+export { syncZohoCrm } from './zoho-service'
+export type { ZohoSyncParams, ZohoSyncSummary } from './zoho-service'
+
 export {
   getFacilities,
   getProducts,

@@ -260,7 +260,7 @@ _d("b_genie","Databricks Genie adapter","genie.py",C.purple,[
   "In-memory thread cache. Env: GENIE_SPACE_ID, DATABRICKS_HOST/TOKEN.",
   ["Endpoints","/api/genie/conversations CRUD · /ask · /ask/reset."]]);
 _d("b_scan","Temp Excursion Scanner","background rule engine",C.red,[
-  "asyncio loop (AI_SCAN_INTERVAL_MINUTES, default 1) scans readings → writes compliance_incidents.",
+  "asyncio loop (AI_SCAN_INTERVAL_MINUTES, default 1440 = 1 day) scans readings → writes compliance_incidents.",
   "Dedup window 168h. Manual trigger POST /api/ai/temp-incidents/scan."]);
 _d("b_pages","Pages Aggregators","7 secondary pages",C.cyan,[
   ["Endpoints","GET /api/pages/cbu-units · /customers · /storage · /transplants · /payments · /referrals · /franchisees · /content."],
@@ -276,8 +276,8 @@ _d("b_db","Dual DB adapter","SQLite ⇄ Databricks SQL",C.orange,[
   ["databricks","database_databricks.py → databricks-sql-connector; rewrites ->> as GET_JSON_OBJECT, inserts as MERGE INTO."],
   "No Spark here — direct SQL to the warehouse/endpoint."]);
 _d("b_loops","Background loops","asyncio tasks",C.light,[
-  "Two cancellable loops in lifespan: temp-incident scanner (1 min) and Zoho sync (60 min, databricks backend only).",
-  "Long sync via asyncio.to_thread; interval 0 disables."]);
+  "Two cancellable loops in lifespan: temp-incident scanner (1440 min / 1 day) and Zoho sync (1440 min / 1 day, databricks backend only).",
+  "Long sync via asyncio.to_thread; interval 0 disables. Manual Zoho sync: Admin → 'Sync Zoho CRM' / POST /api/admin/sync-zoho."]);
 _d("b_server","run_server.py","single-process deploy",C.green,[
   "Serves FastAPI (/api/*) AND built React dist/ with SPA fallback — one origin.",
   "Port CRYOSYNC_PORT/PORT (default 8080). Dev: Vite proxy /api → localhost:8000."]);
@@ -301,7 +301,7 @@ _d("zohosync","Zoho → Bronze","one-way CRM mirror",C.orange,[
   "Runs as background loop + manual /api/admin/sync-zoho."]);
 _d("job","Nightly transform job","bronze → silver → gold",C.green,[
   "DAB (databricks.yml): cron 02:00 UTC, i3.xlarge, Spark 15.4.x singleton. Currently PAUSED until bronze seeded.",
-  "Notebook build_silver_gold (PySpark) or build_silver_gold_sql.py via SQL warehouse."]);
+  "Notebook build_silver_gold (PySpark) on a Databricks cluster/job."]);
 _d("sqlite","SQLite fallback","self-hosted bronze",C.light,[
   "backend/cryosync.db when CRYOSYNC_DB_BACKEND=sqlite — local/first-turn source of truth for migration & sync."]);
 _d("delta","Delta ops APIs","simulation",C.cyan,[
@@ -340,8 +340,8 @@ _d("src_llm","LLM endpoints","chat + vision models",C.purple,[
 _d("ing_migrate","migrate_to_databricks.py","one-time full load",C.purple,[["Mechanism","Reads SQLite tables in order, upserts into bronze (MERGE INTO)."]]);
 _d("ing_sync","sync_to_databricks.py","incremental, watermark",C.cyan,[["Mechanism","delta since sync_watermark; update-tracked vs append-only splits; writes bronze."]]);
 _d("ing_zoho","sync_zoho_to_databricks.py","CRM → bronze",C.orange,[["Mechanism","OAuth2 refresh + GET crm/v7/{module} by Modified_Time → bronze.zoho_*; logs to crm_sync_log."]]);
-_d("ing_lab","lab-report upload + regen","pandas · batch",C.green,[["Mechanism","/api/lab-reports/upload → csv_import_batches; regenerate_lab_reports.py seeds bronze.lab_test_reports."]]);
-_d("ing_loops","Background loops","scanner + zoho",C.light,[["Mechanism","temp scanner (1 min) writes compliance_incidents locally; zoho loop (60 min) → bronze."]]);
+_d("ing_lab","lab-report upload","pandas · batch",C.green,[["Mechanism","/api/lab-reports/upload → csv_import_batches → bronze.lab_test_reports."]]);
+_d("ing_loops","Background loops","scanner + zoho",C.light,[["Mechanism","temp scanner (1440 min / 1 day) writes compliance_incidents locally; zoho loop (1440 min / 1 day) → bronze."]]);
 _d("gold_gs","gold.v_unit_inventory","Genie view",C.green,[["View","unit_summary ⋈ latest lab test results; table COMMENTs for Genie comprehension."]]);
 _d("cons_genie","Databricks Genie","NL → SQL over gold",C.cyan,[
   "Serves 'Ask Kyra': creates conversation, posts question, polls to terminal, returns rows+SQL.",
@@ -480,8 +480,8 @@ var FLOWS_SYS = [
   "AI EXTRACT  f_extract→b_extract  POST /api/ai/extract-form → vision model → prefill(Receiving)",
   "KYRA  f_kyra→b_agent→llm  POST /api/agent/chat tool loop (≤40) → tools + ask_genie",
   "GENIE  f_kyra→b_genie→llm  POST /api/genie/ask → Genie conversation → gold tables",
-  "SCAN  f_compl→b_scan  POST /api/ai/temp-incidents/scan (or 1-min loop) → compliance_incidents",
-  "SYNC-MANUAL  f_admin→b_admin  POST /api/admin/sync-zoho (or 60-min loop)",
+  "SCAN  f_compl→b_scan  POST /api/ai/temp-incidents/scan (or 1-day loop) → compliance_incidents",
+  "SYNC-MANUAL  f_admin→b_admin  POST /api/admin/sync-zoho (or 1-day loop) · Admin → Sync Zoho CRM",
   "PERSIST-CRUD  b_db→sqlite   aiosqlite + _translate_sql · SELECT/INSERT/UPDATE",
   "PERSIST-CLOUD  b_db→bronze  databricks-sql-connector · MERGE INTO bronze · GET_JSON_OBJECT",
   "CRM→BRONZE  b_loops→zoho→bronze  OAuth2 + Modified_Time → sync_zoho_to_databricks.py",
