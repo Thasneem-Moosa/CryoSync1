@@ -11,21 +11,19 @@ bundle:
   name: cryosync
 
 variables:
-  workspace_host:
-    description: Databricks workspace host URL
-    default: https://dbc-2a25661e-3f93.cloud.databricks.com
   catalog:
     description: Unity Catalog name for CryoSync data
     default: cryosync_catalog
 
-workspace:
-  host: ${var.workspace_host}
+# The workspace host is intentionally NOT set here: Databricks CLI does not
+# support variable interpolation for authentication fields. CI provides it via
+# the DATABRICKS_HOST environment variable (GitHub secret), and local runs can
+# use ~/.databrickscfg or DATABRICKS_HOST.
 
 targets:
   prod:
     mode: production
     workspace:
-      host: ${var.workspace_host}
       root_path: /Shared/cryosync/prod
     resources:
       jobs:
@@ -34,7 +32,7 @@ targets:
           # Once Bronze is seeded, UNPAUSE and it runs nightly at 02:00 UTC.
           schedule:
             quartz_cron_expression: "0 0 2 * * ?"
-            timezone_name: UTC
+            timezone_id: UTC
             pause_status: PAUSED
           tasks:
             - task_key: transform

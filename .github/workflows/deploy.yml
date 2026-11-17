@@ -34,10 +34,25 @@ jobs:
       - name: Install Databricks CLI
         uses: databricks/setup-cli@main
 
+      # The web app is auto-deployed by Databricks Apps from Git. This workflow
+      # only manages the analytics job, so skip it cleanly when the deployment
+      # credentials have not been configured in the repository yet.
+      - name: Check Databricks credentials
+        id: creds
+        run: |
+          if [ -z "$DATABRICKS_HOST" ] || [ -z "$DATABRICKS_CLIENT_ID" ] || [ -z "$DATABRICKS_CLIENT_SECRET" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Databricks secrets are missing. Skipping bundle validate/deploy. Add DATABRICKS_HOST, DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET under Settings -> Secrets and variables -> Actions to enable deployment."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Validate bundle
+        if: steps.creds.outputs.configured == 'true'
         run: databricks bundle validate --target prod
 
       - name: Deploy bundle
+        if: steps.creds.outputs.configured == 'true'
         run: databricks bundle deploy --target prod
 
       # The CryoSync web app is deployed from Git via the Databricks Apps UI
